@@ -1,0 +1,15 @@
+# .gitignore
+
+# Secrets & Keys
+*.psk
+key.psk
+*.key
+*.pem
+
+# Local Test Configs
+zabbix_agent2.conf
+.env
+
+# OS Metadata
+.DS_Store
+Thumbs.db
