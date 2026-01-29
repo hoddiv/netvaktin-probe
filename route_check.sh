@@ -1,0 +1,91 @@
+#!/bin/bash
+# Netvaktin Probe - Route Analyzer v2.0
+# Usage: ./route_check.sh <TARGET_IP>
+
+set -euo pipefail
+
+TARGET="${1:-}"
+
+if [[ -z "$TARGET" ]]; then
+    echo '{"error": "missing_target", "status": "failed"}'
+    exit 1
+fi
+
+# --- Signatures (Heuristics) ---
+readonly SIG_LINX="195.66."
+readonly SIG_INEX="185.6.36."
+readonly SIG_DKNET="109.105."
+readonly SIG_ARELION="62.115."
+readonly SIG_L3_LEGACY="4.68."
+readonly SIG_L3_LUMEN="4.69."
+readonly SIG_NTT="129.250."
+readonly SIG_COGENT="213.248."
+readonly SIG_COGENT_BB="154.54."
+readonly SIG_ZAYO="64.125."
+readonly SIG_TATA="80.239."
+readonly SIG_HE="184.105."
+readonly SIG_GOOGLE_PEER="72.14."
+readonly SIG_GOOGLE_NET="172.217."
+readonly SIG_JANET="146.97."
+readonly SIG_VODAFONE_UK="89.10."  # vodafone IS
+
+# --- Execution ---
+# 1. Trace (MTR report mode, no-dns, wide output)
+# Suppress stderr to keep JSON clean.
+if ! raw_trace=$(mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
+    echo '{"error": "trace_failed", "status": "failed"}'
+    exit 1
+fi
+
+# 2. Extract Hops (Hop Number + IP)
+hop_list=$(echo "$raw_trace" | awk '{print $1, $2}')
+
+# 3. Fingerprinting (Focus on Hops 6-12)
+sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} END{print ""}' | sed 's/ $//')
+
+# Generate stable hash (Hops 6-9)
+hash_input=$(echo "$hop_list" | awk '$1>=6 && $1<=9 {print $2}')
+route_hash=$(echo "$hash_input" | md5sum | awk '{print $1}')
+
+# 4. Feature Detection
+declare -a detected_features=()
+
+# IXPs
+[[ "$sig_window" == *"$SIG_LINX"* ]]        && detected_features+=("LINX")
+[[ "$sig_window" == *"$SIG_INEX"* ]]        && detected_features+=("INEX")
+[[ "$sig_window" == *"$SIG_DKNET"* ]]       && detected_features+=("DKNET")
+
+# Carriers
+[[ "$sig_window" == *"$SIG_ARELION"* ]]     && detected_features+=("ARELION")
+[[ "$sig_window" == *"$SIG_L3_LUMEN"* ]]    && detected_features+=("LEVEL3")
+[[ "$sig_window" == *"$SIG_L3_LEGACY"* ]]   && detected_features+=("LEVEL3")
+[[ "$sig_window" == *"$SIG_NTT"* ]]         && detected_features+=("NTT")
+[[ "$sig_window" == *"$SIG_COGENT"* ]]      && detected_features+=("COGENT")
+[[ "$sig_window" == *"$SIG_COGENT_BB"* ]]   && detected_features+=("COGENT")
+[[ "$sig_window" == *"$SIG_ZAYO"* ]]        && detected_features+=("ZAYO")
+[[ "$sig_window" == *"$SIG_TATA"* ]]        && detected_features+=("TATA")
+[[ "$sig_window" == *"$SIG_HE"* ]]          && detected_features+=("HE")
+[[ "$sig_window" == *"$SIG_VODAFONE_UK"* ]] && detected_features+=("VODAFONE")
+
+# Content
+[[ "$sig_window" == *"$SIG_GOOGLE_PEER"* ]] && detected_features+=("GOOGLE")
+[[ "$sig_window" == *"$SIG_GOOGLE_NET"* ]]  && detected_features+=("GOOGLE")
+
+# Default to UNKNOWN
+if [ ${#detected_features[@]} -eq 0 ]; then
+    feature_string="UNKNOWN"
+else
+    feature_string=$(echo "${detected_features[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')
+fi
+
+# Domain Hash
+domain_hash=$(echo "$feature_string" | md5sum | awk '{print $1}')
+
+# 5. Output
+jq -n \
+    --arg trace "$raw_trace" \
+    --arg hash "$route_hash" \
+    --arg features "$feature_string" \
+    --arg sig "$sig_window" \
+    --arg domain "$domain_hash" \
+    '{raw_trace: $trace, hash: $hash, features: $features, sig: $sig, domain: $domain}'
