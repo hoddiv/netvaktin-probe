@@ -1,5 +1,5 @@
 #!/bin/bash
-# Netvaktin Probe - Route Analyzer v2.0
+# Netvaktin Probe - Route Analyzer v2.1 (WSL/Ubuntu Fix)
 # Usage: ./route_check.sh <TARGET_IP>
 
 set -euo pipefail
@@ -27,18 +27,23 @@ readonly SIG_HE="184.105."
 readonly SIG_GOOGLE_PEER="72.14."
 readonly SIG_GOOGLE_NET="172.217."
 readonly SIG_JANET="146.97."
-readonly SIG_VODAFONE_UK="89.10."  # vodafone IS
+readonly SIG_VODAFONE_UK="89.10."
+readonly SIG_VODAFONE_IS="217.151."  # Sýn hf (Vodafone Iceland)
 
 # --- Execution ---
-# 1. Trace (MTR report mode, no-dns, wide output)
-# Suppress stderr to keep JSON clean.
+# 1. Run Trace
 if ! raw_trace=$(mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
     echo '{"error": "trace_failed", "status": "failed"}'
     exit 1
 fi
 
-# 2. Extract Hops (Hop Number + IP)
-hop_list=$(echo "$raw_trace" | awk '{print $1, $2}')
+# 2. Extract Hops (Sanitizing the hop number)
+# We use gsub to remove dots and bars ("1.|--" -> "1")
+hop_list=$(echo "$raw_trace" | awk '{
+    hop_num=$1;
+    gsub(/[^0-9]/, "", hop_num);
+    print hop_num, $2
+}')
 
 # 3. Fingerprinting (Focus on Hops 6-12)
 sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} END{print ""}' | sed 's/ $//')
@@ -66,6 +71,7 @@ declare -a detected_features=()
 [[ "$sig_window" == *"$SIG_TATA"* ]]        && detected_features+=("TATA")
 [[ "$sig_window" == *"$SIG_HE"* ]]          && detected_features+=("HE")
 [[ "$sig_window" == *"$SIG_VODAFONE_UK"* ]] && detected_features+=("VODAFONE")
+[[ "$sig_window" == *"$SIG_VODAFONE_IS"* ]] && detected_features+=("VODAFONE_IS")
 
 # Content
 [[ "$sig_window" == *"$SIG_GOOGLE_PEER"* ]] && detected_features+=("GOOGLE")
