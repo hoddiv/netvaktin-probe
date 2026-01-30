@@ -1,27 +1,33 @@
 {
-  "version": "1.0",
+  "version": "1.2",
   "signatures": {
     "FARICE-1": {
+      "description": "Reykjavik to London via Scotland",
       "gateways": [
-        "217.151.190.",
-        "62.115.196.",
+        "217.151.190.9",
+        "217.151.190.7",
+        "62.115.",
         "146.97.35."
       ]
     },
-    "DANICE": {
-      "gateways": [
-        "192.38.7.",
-        "109.105.",
-        "130.225."
-      ]
-    },
     "IRIS": {
+      "description": "Reykjavik to Dublin Direct",
       "gateways": [
+        "217.151.190.3",
         "87.44.56.",
         "185.6.36."
       ]
     },
+    "DANICE": {
+      "description": "Reykjavik to Denmark",
+      "gateways": [
+        "192.38.",
+        "109.105.",
+        "130.225."
+      ]
+    },
     "GREENLAND": {
+      "description": "Traffic landing in Greenland",
       "gateways": [
         "194.177.227."
       ]
