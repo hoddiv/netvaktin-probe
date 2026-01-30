@@ -54,7 +54,7 @@ log "Identity Established: $HOSTNAME [$METADATA]"
 
 # 2.5 Signature Updates (Community Intelligence)
 # This pulls the latest "Gatekeeper IPs" from GitHub so we don't have to rebuild Docker for every new cable.
-SIGNATURE_URL="${ZBX_SIGNATURE_URL:-https://raw.githubusercontent.com/YOUR_GITHUB_USER/YOUR_REPO/main/netvaktin_signatures.json}"
+SIGNATURE_URL="${ZBX_SIGNATURE_URL:-https://raw.githubusercontent.com/hoddiv/netvaktin-probe/main/netvaktin_signatures.json}"
 SIGNATURE_DEST="/etc/zabbix/signatures.json"
 
 log "⬇️ Checking for Cable Signature updates..."
