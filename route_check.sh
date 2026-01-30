@@ -1,17 +1,23 @@
 #!/bin/bash
-# Netvaktin Probe - Route Analyzer v2.1 (WSL/Ubuntu Fix)
-# Usage: ./route_check.sh <TARGET_IP>
+# Netvaktin Probe - Route Analyzer v3.0
+# Usage: ./route_check.sh <TARGET_IP> [LABEL]
 
 set -euo pipefail
 
 TARGET="${1:-}"
+LABEL="${2:-}"  # Capture the Zabbix Label (e.g., "UK_janet1")
 
 if [[ -z "$TARGET" ]]; then
     echo '{"error": "missing_target", "status": "failed"}'
     exit 1
 fi
 
-# --- Signatures (Heuristics) ---
+# --- Configuration ---
+# This file is downloaded by entrypoint.sh from GitHub
+SIG_FILE="/etc/zabbix/signatures.json"
+
+# --- Legacy Signatures (Context Tags) ---
+# We keep these to identify Carriers/IXPs even if the Cable is unknown
 readonly SIG_LINX="195.66."
 readonly SIG_INEX="185.6.36."
 readonly SIG_DKNET="109.105."
@@ -28,7 +34,7 @@ readonly SIG_GOOGLE_PEER="72.14."
 readonly SIG_GOOGLE_NET="172.217."
 readonly SIG_JANET="146.97."
 readonly SIG_VODAFONE_UK="89.10."
-readonly SIG_VODAFONE_IS="217.151."  # Sýn hf (Vodafone Iceland)
+readonly SIG_VODAFONE_IS="217.151."
 
 # --- Execution ---
 # 1. Run Trace
@@ -37,30 +43,50 @@ if ! raw_trace=$(mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
     exit 1
 fi
 
-# 2. Extract Hops (Sanitizing the hop number)
-# We use gsub to remove dots and bars ("1.|--" -> "1")
+# 2. Extract Hops (Sanitizing)
 hop_list=$(echo "$raw_trace" | awk '{
     hop_num=$1;
     gsub(/[^0-9]/, "", hop_num);
     print hop_num, $2
 }')
 
-# 3. Fingerprinting (Focus on Hops 6-12)
-sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} END{print ""}' | sed 's/ $//')
+# 3. Smart Detection (JSON Source of Truth)
+DETECTED_CABLE=""
 
-# Generate stable hash (Hops 6-9)
-hash_input=$(echo "$hop_list" | awk '$1>=6 && $1<=9 {print $2}')
-route_hash=$(echo "$hash_input" | md5sum | awk '{print $1}')
+# Only run if the JSON file exists and is valid
+if [[ -f "$SIG_FILE" ]]; then
+    # Get list of cables (e.g., FARICE-1, DANICE)
+    # We use || true to prevent crashing if JSON is empty
+    cables=$(jq -r '.signatures | keys[]' "$SIG_FILE" 2>/dev/null || true)
+    
+    for cable in $cables; do
+        # Extract gateways for this cable
+        gateways=$(jq -r ".signatures[\"$cable\"].gateways[]" "$SIG_FILE")
+        
+        for gate in $gateways; do
+            # Check if ANY line in the raw trace contains this gateway IP
+            if [[ "$raw_trace" == *"$gate"* ]]; then
+                DETECTED_CABLE="$cable"
+                break 2 # Found it! Stop searching.
+            fi
+        done
+    done
+fi
 
-# 4. Feature Detection
+# 4. Feature Detection (Combining Sources)
 declare -a detected_features=()
 
-# IXPs
+# Priority 1: The Detected Cable
+if [[ -n "$DETECTED_CABLE" ]]; then
+    detected_features+=("$DETECTED_CABLE")
+fi
+
+# Priority 2: Legacy Heuristics (Window Hops 6-12)
+sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} END{print ""}' | sed 's/ $//')
+
 [[ "$sig_window" == *"$SIG_LINX"* ]]        && detected_features+=("LINX")
 [[ "$sig_window" == *"$SIG_INEX"* ]]        && detected_features+=("INEX")
 [[ "$sig_window" == *"$SIG_DKNET"* ]]       && detected_features+=("DKNET")
-
-# Carriers
 [[ "$sig_window" == *"$SIG_ARELION"* ]]     && detected_features+=("ARELION")
 [[ "$sig_window" == *"$SIG_L3_LUMEN"* ]]    && detected_features+=("LEVEL3")
 [[ "$sig_window" == *"$SIG_L3_LEGACY"* ]]   && detected_features+=("LEVEL3")
@@ -72,26 +98,27 @@ declare -a detected_features=()
 [[ "$sig_window" == *"$SIG_HE"* ]]          && detected_features+=("HE")
 [[ "$sig_window" == *"$SIG_VODAFONE_UK"* ]] && detected_features+=("VODAFONE")
 [[ "$sig_window" == *"$SIG_VODAFONE_IS"* ]] && detected_features+=("VODAFONE_IS")
-
-# Content
 [[ "$sig_window" == *"$SIG_GOOGLE_PEER"* ]] && detected_features+=("GOOGLE")
 [[ "$sig_window" == *"$SIG_GOOGLE_NET"* ]]  && detected_features+=("GOOGLE")
 
-# Default to UNKNOWN
+# 5. Final Output Formatting
 if [ ${#detected_features[@]} -eq 0 ]; then
     feature_string="UNKNOWN"
 else
     feature_string=$(echo "${detected_features[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')
 fi
 
-# Domain Hash
+# Hashing for deduplication
+hash_input=$(echo "$hop_list" | awk '$1>=6 && $1<=9 {print $2}')
+route_hash=$(echo "$hash_input" | md5sum | awk '{print $1}')
 domain_hash=$(echo "$feature_string" | md5sum | awk '{print $1}')
 
-# 5. Output
+# JSON Output
 jq -n \
     --arg trace "$raw_trace" \
     --arg hash "$route_hash" \
     --arg features "$feature_string" \
     --arg sig "$sig_window" \
     --arg domain "$domain_hash" \
-    '{raw_trace: $trace, hash: $hash, features: $features, sig: $sig, domain: $domain}'
+    --arg label "$LABEL" \
+    '{raw_trace: $trace, hash: $hash, features: $features, sig: $sig, domain: $domain, label: $label}'
