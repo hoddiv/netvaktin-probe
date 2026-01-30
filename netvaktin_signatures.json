@@ -1,5 +1,5 @@
 {
-  "version": "1.3",
+  "version": "1.4",
   "signatures": {
     "FARICE-1": {
       "description": "Reykjavik to London (via Scotland)",
@@ -7,7 +7,6 @@
         "217.151.190.9",
         "217.151.190.7",
         "195.66.",
-        "62.115.",
         "146.97.35."
       ]
     },
