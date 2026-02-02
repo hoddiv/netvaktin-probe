@@ -22,7 +22,7 @@ This container runs a specialized **Zabbix Agent 2** in "Active Mode" to perform
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/YOUR_USER/netvaktin-probe.git
+    git clone https://github.com/hoddiv/netvaktin-probe.git
     cd netvaktin-probe
     ```
 
