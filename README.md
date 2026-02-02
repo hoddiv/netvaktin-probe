@@ -1,51 +1,50 @@
 # Netvaktin Community Probe v2
 
-**Distributed network latency & path analyzer for the Netvaktin project.**
+**Network monitoring probe for the Netvaktin project.**
 
 ### Overview
-This container runs a specialized **Zabbix Agent 2** in "Active Mode" to perform deep-packet path analysis (`mtr`) against defined national endpoints. Unlike standard agents, this probe is **autonomous**:
-* **Auto-Registration:** Automatically registers itself with the central server using the Zabbix API.
-* **Self-Provisioning:** Generates its own TLS-PSK encryption keys on first launch.
-* **NAT-Piercing:** Uses a "Push-Only" architecture, requiring **zero inbound firewall ports** or router configuration.
+Runs a **Zabbix Agent 2** (Active Mode) container that performs `mtr` traceroutes to national endpoints. It is designed to work behind residential routers without configuration.
+
+* **Auto-Registration:** Registers itself via Zabbix API on boot.
+* **Encryption:** Generates its own TLS-PSK keys automatically.
+* **No Port Forwarding:** Uses active (push) checks only. No inbound firewall rules needed.
 
 ### Architecture
-* **Base:** `zabbix/zabbix-agent2:alpine-7.0` (Modified)
-* **Logic:** Python-based Auto-Registrar & Path Analyzer (`exporter.py` / `arris_stats.py`)
+* **Base:** `zabbix/zabbix-agent2:alpine-7.0`
+* **Scripts:** Python (`exporter.py`) handles registration and MTR parsing.
 * **Security:**
-    * Strict TLS-PSK Encryption for all data transport.
-    * No incoming ports opened (Active Agent).
-    * Runs in privileged mode (required *only* for raw socket access by `mtr`).
+    * Traffic encrypted via TLS-PSK.
+    * Container requires `--privileged` flag solely for `mtr` raw socket access.
 
-### Deployment (Volunteer)
+### Installation
 
-**Prerequisites:** Docker and Internet access.
+**Requirements:** Docker, Internet access.
 
-1.  **Clone the Repository**
+1.  **Get the code**
     ```bash
     git clone https://github.com/hoddiv/netvaktin-probe.git
     cd netvaktin-probe
     ```
 
-2.  **Build the Image**
-    *We build locally to ensure compatibility with your CPU architecture (AMD64/ARM64).*
+2.  **Build image**
+    (Builds locally to support both AMD64 and ARM64/Pi).
     ```bash
     sudo docker build -t netvaktin-probe .
     ```
 
-3.  **Run the Installer**
-    This script handles key generation and container startup automatically.
+3.  **Deploy**
+    Run the wrapper script to generate keys and start the container.
     ```bash
     chmod +x deploy.sh
     ./deploy.sh
     ```
-    *You will be prompted to enter a unique name (e.g., `Probe-Garage`) and the API Token.*
+    *Enter a unique hostname (e.g., `Probe-Garage`) and your API Token when prompted.*
 
-### Manual Debugging
-To check the status of your probe:
+### Debugging
 ```bash
-# Check logs
+# View startup logs
 sudo docker logs netvaktin-Probe-Name
 
-# Verify container is running
+# Check status
 sudo docker ps
 ```
