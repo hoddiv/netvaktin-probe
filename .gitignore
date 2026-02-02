@@ -13,3 +13,6 @@ zabbix_agent2.conf
 # OS Metadata
 .DS_Store
 Thumbs.db
+*.psk
+.env
+__pycache__/
