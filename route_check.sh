@@ -1,5 +1,5 @@
 #!/bin/bash
-# Netvaktin Probe - Route Analyzer v3.0
+# Netvaktin Probe - Route Analyzer v3.1 (Hardened)
 # Usage: ./route_check.sh <TARGET_IP> [LABEL]
 
 set -euo pipefail
@@ -13,11 +13,9 @@ if [[ -z "$TARGET" ]]; then
 fi
 
 # --- Configuration ---
-# This file is downloaded by entrypoint.sh from GitHub
 SIG_FILE="/etc/zabbix/signatures.json"
 
 # --- Legacy Signatures (Context Tags) ---
-# We keep these to identify Carriers/IXPs even if the Cable is unknown
 readonly SIG_LINX="195.66."
 readonly SIG_INEX="185.6.36."
 readonly SIG_DKNET="109.105."
@@ -37,10 +35,10 @@ readonly SIG_VODAFONE_UK="89.10."
 readonly SIG_VODAFONE_IS="217.151."
 
 # --- Execution ---
-# 1. Run Trace
-if ! raw_trace=$(mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
-    echo '{"error": "trace_failed", "status": "failed"}'
-    exit 1
+# 1. Run Trace with Hard Timeout
+if ! raw_trace=$(timeout 25 mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
+    echo '{"error": "trace_failed_or_timeout", "status": "failed", "label": "'"$LABEL"'"}'
+    exit 0
 fi
 
 # 2. Extract Hops (Sanitizing)
@@ -52,22 +50,14 @@ hop_list=$(echo "$raw_trace" | awk '{
 
 # 3. Smart Detection (JSON Source of Truth)
 DETECTED_CABLE=""
-
-# Only run if the JSON file exists and is valid
 if [[ -f "$SIG_FILE" ]]; then
-    # Get list of cables (e.g., FARICE-1, DANICE)
-    # We use || true to prevent crashing if JSON is empty
     cables=$(jq -r '.signatures | keys[]' "$SIG_FILE" 2>/dev/null || true)
-    
     for cable in $cables; do
-        # Extract gateways for this cable
         gateways=$(jq -r ".signatures[\"$cable\"].gateways[]" "$SIG_FILE")
-        
         for gate in $gateways; do
-            # Check if ANY line in the raw trace contains this gateway IP
             if [[ "$raw_trace" == *"$gate"* ]]; then
                 DETECTED_CABLE="$cable"
-                break 2 # Found it! Stop searching.
+                break 2
             fi
         done
     done
@@ -75,13 +65,11 @@ fi
 
 # 4. Feature Detection (Combining Sources)
 declare -a detected_features=()
-
-# Priority 1: The Detected Cable
 if [[ -n "$DETECTED_CABLE" ]]; then
     detected_features+=("$DETECTED_CABLE")
 fi
 
-# Priority 2: Legacy Heuristics (Window Hops 6-12)
+# Legacy Heuristics (Window Hops 6-12)
 sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} END{print ""}' | sed 's/ $//')
 
 [[ "$sig_window" == *"$SIG_LINX"* ]]        && detected_features+=("LINX")

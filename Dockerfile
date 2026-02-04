@@ -8,7 +8,6 @@ USER root
 RUN mkdir -p /var/run/zabbix && chown -R zabbix:zabbix /var/run/zabbix
 
 # Install dependencies
-# Added: python3 and py3-requests (Required for register_probe.py)
 RUN apk add --no-cache \
     bash \
     curl \

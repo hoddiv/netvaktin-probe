@@ -1,7 +1,5 @@
 #!/bin/bash
-
-# Netvaktin Probe Deployment
-# Usage: ./deploy.sh [hostname]
+# Netvaktin Probe Deployment v2.1
 
 SERVER="monitor.logbirta.is"
 PORT="10051"
@@ -15,8 +13,7 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # 2. Credential Handling
-# Check env first, otherwise prompt securely
-if [ -z "$ZBX_API_TOKEN" ]; then
+if [ -z "${ZBX_API_TOKEN:-}" ]; then
     read -sp "Zabbix API Token: " ZBX_API_TOKEN
     echo ""
 fi
@@ -27,8 +24,7 @@ if [ -z "$ZBX_API_TOKEN" ]; then
 fi
 
 # 3. Host Identity
-# Accept argument or prompt
-if [ -n "$1" ]; then
+if [ -n "${1:-}" ]; then
     HOSTNAME="$1"
 else
     read -p "Hostname (e.g. Probe-Garage-01): " HOSTNAME
@@ -55,14 +51,18 @@ CONTAINER="netvaktin-${HOSTNAME}"
 
 # 5. Deployment
 echo "Deploying $CONTAINER..."
-
-# Cleanup old instances if they exist
 sudo docker rm -f "$CONTAINER" 2>/dev/null || true
 
 sudo docker run -d \
   --name "$CONTAINER" \
   --net=host \
   --restart always \
+  --init \
+  --pids-limit 500 \
+  --memory="512m" \
+  --health-cmd="ps aux | grep zabbix_agent2 || exit 1" \
+  --health-interval=1m \
+  --health-retries=3 \
   -v "$(pwd)/$PSK_FILE":/etc/zabbix/netvaktin.psk \
   -e ZBX_HOSTNAME="$HOSTNAME" \
   -e ZBX_SERVER_HOST="$SERVER" \
@@ -71,7 +71,7 @@ sudo docker run -d \
   -e ZBX_API_TOKEN="$ZBX_API_TOKEN" \
   -e ZBX_TLSPSKIDENTITY="$PSK_ID" \
   -e ZBX_TLSPSKVALUE="$PSK" \
-  netvaktin-probe > /dev/null
+  netvaktin-probe
 
 if [ $? -eq 0 ]; then
     echo "Done. Container ID: $(sudo docker ps -q -f name=$CONTAINER)"
