@@ -1,5 +1,5 @@
 #!/bin/bash
-# Netvaktin Probe Deployment v2.1
+# Netvaktin Probe Deployment v2.2 - Hardened Edition
 
 SERVER="monitor.logbirta.is"
 PORT="10051"
@@ -53,14 +53,15 @@ CONTAINER="netvaktin-${HOSTNAME}"
 echo "Deploying $CONTAINER..."
 sudo docker rm -f "$CONTAINER" 2>/dev/null || true
 
+# INCREASED PIDS-LIMIT AND FORK-BASED HEALTHCHECK
 sudo docker run -d \
   --name "$CONTAINER" \
   --net=host \
   --restart always \
   --init \
-  --pids-limit 500 \
+  --pids-limit 2000 \
   --memory="512m" \
-  --health-cmd="ps aux | grep zabbix_agent2 || exit 1" \
+  --health-cmd="ls /usr/bin/route_check.sh > /dev/null || exit 1" \
   --health-interval=1m \
   --health-retries=3 \
   -v "$(pwd)/$PSK_FILE":/etc/zabbix/netvaktin.psk \

@@ -1,11 +1,15 @@
 #!/bin/bash
-# Netvaktin Probe - Route Analyzer v3.1 (Hardened)
+# Netvaktin Probe - Route Analyzer v3.2 (Bulletproof)
 # Usage: ./route_check.sh <TARGET_IP> [LABEL]
 
 set -euo pipefail
 
+# --- Watchdog: Kill script if it exceeds 45 seconds to prevent PID exhaustion ---
+(sleep 45; kill $$ 2>/dev/null) &
+WATCHDOG_PID=$!
+
 TARGET="${1:-}"
-LABEL="${2:-}"  # Capture the Zabbix Label (e.g., "UK_janet1")
+LABEL="${2:-}"
 
 if [[ -z "$TARGET" ]]; then
     echo '{"error": "missing_target", "status": "failed"}'
@@ -15,7 +19,7 @@ fi
 # --- Configuration ---
 SIG_FILE="/etc/zabbix/signatures.json"
 
-# --- Legacy Signatures (Context Tags) ---
+# --- Legacy Signatures ---
 readonly SIG_LINX="195.66."
 readonly SIG_INEX="185.6.36."
 readonly SIG_DKNET="109.105."
@@ -34,21 +38,21 @@ readonly SIG_JANET="146.97."
 readonly SIG_VODAFONE_UK="89.10."
 readonly SIG_VODAFONE_IS="217.151."
 
-# --- Execution ---
 # 1. Run Trace with Hard Timeout
 if ! raw_trace=$(timeout 25 mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
+    kill $WATCHDOG_PID 2>/dev/null
     echo '{"error": "trace_failed_or_timeout", "status": "failed", "label": "'"$LABEL"'"}'
     exit 0
 fi
 
-# 2. Extract Hops (Sanitizing)
+# 2. Extract Hops
 hop_list=$(echo "$raw_trace" | awk '{
     hop_num=$1;
     gsub(/[^0-9]/, "", hop_num);
     print hop_num, $2
 }')
 
-# 3. Smart Detection (JSON Source of Truth)
+# 3. Smart Detection
 DETECTED_CABLE=""
 if [[ -f "$SIG_FILE" ]]; then
     cables=$(jq -r '.signatures | keys[]' "$SIG_FILE" 2>/dev/null || true)
@@ -63,13 +67,10 @@ if [[ -f "$SIG_FILE" ]]; then
     done
 fi
 
-# 4. Feature Detection (Combining Sources)
+# 4. Feature Detection
 declare -a detected_features=()
-if [[ -n "$DETECTED_CABLE" ]]; then
-    detected_features+=("$DETECTED_CABLE")
-fi
+[[ -n "$DETECTED_CABLE" ]] && detected_features+=("$DETECTED_CABLE")
 
-# Legacy Heuristics (Window Hops 6-12)
 sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} END{print ""}' | sed 's/ $//')
 
 [[ "$sig_window" == *"$SIG_LINX"* ]]        && detected_features+=("LINX")
@@ -89,19 +90,19 @@ sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} E
 [[ "$sig_window" == *"$SIG_GOOGLE_PEER"* ]] && detected_features+=("GOOGLE")
 [[ "$sig_window" == *"$SIG_GOOGLE_NET"* ]]  && detected_features+=("GOOGLE")
 
-# 5. Final Output Formatting
 if [ ${#detected_features[@]} -eq 0 ]; then
     feature_string="UNKNOWN"
 else
     feature_string=$(echo "${detected_features[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')
 fi
 
-# Hashing for deduplication
 hash_input=$(echo "$hop_list" | awk '$1>=6 && $1<=9 {print $2}')
 route_hash=$(echo "$hash_input" | md5sum | awk '{print $1}')
 domain_hash=$(echo "$feature_string" | md5sum | awk '{print $1}')
 
-# JSON Output
+# Clean up watchdog before exit
+kill $WATCHDOG_PID 2>/dev/null
+
 jq -n \
     --arg trace "$raw_trace" \
     --arg hash "$route_hash" \
