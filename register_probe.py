@@ -3,16 +3,16 @@ import sys
 import requests
 import json
 
-# === CONFIGURATION (From Docker Env) ===
+# === CONFIGURATION ===
 ZABBIX_URL = os.getenv("ZBX_API_URL")
 API_TOKEN = os.getenv("ZBX_API_TOKEN") 
 HOSTNAME = os.getenv("ZBX_HOSTNAME")
 PSK_IDENTITY = os.getenv("ZBX_TLSPSKIDENTITY", "CommunityProbe")
 PSK_VALUE = os.getenv("ZBX_TLSPSKVALUE") 
 
-# Target names from Zabbix Setup
-TEMPLATE_NAME = "Template Netvaktin"
-HOST_GROUP_NAME = "Netvaktin Probes"
+# Dynamic Configuration via Env (Defaults to Domestic)
+TEMPLATE_NAME = os.getenv("ZBX_TEMPLATE_NAME", "Template Netvaktin")
+HOST_GROUP_NAME = os.getenv("ZBX_HOSTGROUP_NAME", "Netvaktin Probes")
 
 def log(msg):
     print(f"[Auto-Register] {msg}")
@@ -59,7 +59,7 @@ def register():
     group_id = get_id("hostgroup", HOST_GROUP_NAME)
 
     if not template_id or not group_id:
-        log(f"❌ CRITICAL: Template or Host Group not found on server!")
+        log(f"❌ CRITICAL: Template '{TEMPLATE_NAME}' or Host Group '{HOST_GROUP_NAME}' not found on server!")
         sys.exit(1)
 
     # 2. Check if Host Exists
@@ -70,7 +70,6 @@ def register():
         host_id = hosts[0]['hostid']
         log(f"✅ Host exists (ID: {host_id}). Syncing current PSK to server...")
         
-        # Force update the server PSK with our current local PSK
         update_params = {
             "hostid": host_id,
             "tls_psk_identity": PSK_IDENTITY,
@@ -79,13 +78,13 @@ def register():
         
         res = zapi("host.update", update_params)
         if res:
-            log("🔄 PSK updated successfully. Handshake should now recover.")
+            log("🔄 PSK updated successfully.")
         else:
             log("❌ Failed to update PSK on server.")
         return
 
     # 3. Create Host (New Probe)
-    log(f"Registering new probe...")
+    log(f"Registering new probe in group '{HOST_GROUP_NAME}'...")
     create_params = {
         "host": HOSTNAME,
         "interfaces": [{

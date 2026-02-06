@@ -1,20 +1,71 @@
 #!/bin/bash
 set -eo pipefail
 
+# === CONFIGURATION & DEFAULTS ===
 ZABBIX_CONF="/etc/zabbix/zabbix_agent2.conf"
 PSK_FILE="${ZBX_TLSPSKFILE:-/etc/zabbix/netvaktin.psk}"
 SERVER_HOST="${ZBX_SERVER_HOST:-monitor.logbirta.is}"
 ID_FILE="/var/lib/zabbix/data/probe_id"
 
+# GitHub Sources (The Single Source of Truth)
+URL_DOMESTIC="https://raw.githubusercontent.com/hoddiv/netvaktin-probe/main/netvaktin_signatures.json"
+URL_EXTERNAL="https://raw.githubusercontent.com/hoddiv/netvaktin-probe/main/signatures_inbound.json"
+
+# Local Fallbacks (Baked into Image)
+LOCAL_DOMESTIC="/usr/local/share/netvaktin/netvaktin_signatures.json"
+LOCAL_EXTERNAL="/usr/local/share/netvaktin/signatures_inbound.json"
+
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"; }
 
-log "Starting Netvaktin Probe (Bulletproof v2.3)..."
+# === DYNAMIC SIGNATURE LOGIC ===
+download_signatures() {
+    local url="$1"
+    local fallback="$2"
+    local target="/etc/zabbix/signatures.json"
+
+    log "⬇️  Attempting to fetch latest signatures from GitHub..."
+    
+    # Try download with 5s timeout
+    if curl -s --max-time 5 -o "${target}.tmp" "$url"; then
+        # Validate JSON integrity
+        if jq empty "${target}.tmp" >/dev/null 2>&1; then
+            mv "${target}.tmp" "$target"
+            log "✅  Signatures updated from GitHub."
+            return 0
+        else
+            log "⚠️  Downloaded file is invalid JSON. Ignoring."
+        fi
+    else
+        log "⚠️  GitHub unreachable or timeout. Using local fallback."
+    fi
+
+    # Fallback to baked-in file
+    log "ℹ️  Reverting to baked-in signatures."
+    cp "$fallback" "$target"
+}
+
+# === ROLE SWITCHING ===
+ROLE="${NETVAKTIN_ROLE:-Domestic}"
+
+if [ "$ROLE" == "External" ]; then
+    echo "[Init] 🌍 Mode: EXTERNAL (Inbound Monitoring)"
+    download_signatures "$URL_EXTERNAL" "$LOCAL_EXTERNAL"
+    
+    export ZBX_HOSTGROUP_NAME="Netvaktin External Probes"
+    export ZBX_TEMPLATE_NAME="Template Netvaktin Inbound"
+else
+    echo "[Init] 🏠 Mode: DOMESTIC (Outbound Monitoring)"
+    download_signatures "$URL_DOMESTIC" "$LOCAL_DOMESTIC"
+    
+    export ZBX_HOSTGROUP_NAME="Netvaktin Probes"
+    export ZBX_TEMPLATE_NAME="Template Netvaktin"
+fi
+
+log "Starting Netvaktin Probe (Role: $ROLE)..."
 
 # 0. Runtime Fixes
-if [ ! -d "/var/run/zabbix" ]; then
-    mkdir -p /var/run/zabbix
-    if [ "$(id -u)" -eq 0 ]; then chown zabbix:zabbix /var/run/zabbix; fi
-fi
+mkdir -p /var/run/zabbix
+if [ "$(id -u)" -eq 0 ]; then chown zabbix:zabbix /var/run/zabbix; fi
 
 if [ ! -d "$(dirname "$ID_FILE")" ]; then
     mkdir -p "$(dirname "$ID_FILE")"
@@ -47,15 +98,11 @@ else
     fi
 fi
 
-METADATA="ISP:${DETECTED_ISP}"
+# 2.5 Metadata Construction
+METADATA="ISP:${DETECTED_ISP};Role:${ROLE}"
+log "Probe Identity: $HOSTNAME ($METADATA)"
 
-# 2.5 Signature Updates
-SIGNATURE_URL="${ZBX_SIGNATURE_URL:-https://raw.githubusercontent.com/hoddiv/netvaktin-probe/main/netvaktin_signatures.json}"
-SIGNATURE_DEST="/etc/zabbix/signatures.json"
-curl -s -f -o "$SIGNATURE_DEST" --max-time 10 "$SIGNATURE_URL" || log "⚠️ Using baked-in signatures."
-if [ ! -f "$SIGNATURE_DEST" ]; then echo "{}" > "$SIGNATURE_DEST"; fi
-
-# 2.9 API Self-Registration (PSK Sync logic)
+# 2.9 API Self-Registration
 if [ -n "$ZBX_API_TOKEN" ]; then
     log "🤖 Performing API Self-Registration..."
     if [ -f "$PSK_FILE" ]; then
@@ -64,7 +111,7 @@ if [ -n "$ZBX_API_TOKEN" ]; then
     fi
 fi
 
-# 3. Agent Config - Corrected to Max Allowable Range (30s)
+# 3. Agent Config
 cat > "$ZABBIX_CONF" <<EOF
 PidFile=/var/run/zabbix/zabbix_agent2.pid
 Timeout=30
