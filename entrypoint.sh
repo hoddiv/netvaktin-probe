@@ -55,7 +55,7 @@ SIGNATURE_DEST="/etc/zabbix/signatures.json"
 curl -s -f -o "$SIGNATURE_DEST" --max-time 10 "$SIGNATURE_URL" || log "⚠️ Using baked-in signatures."
 if [ ! -f "$SIGNATURE_DEST" ]; then echo "{}" > "$SIGNATURE_DEST"; fi
 
-# 2.9 API Self-Registration (The PSK Sync logic)
+# 2.9 API Self-Registration (PSK Sync logic)
 if [ -n "$ZBX_API_TOKEN" ]; then
     log "🤖 Performing API Self-Registration..."
     if [ -f "$PSK_FILE" ]; then
@@ -64,10 +64,10 @@ if [ -n "$ZBX_API_TOKEN" ]; then
     fi
 fi
 
-# 3. Agent Config - UNIVERSAL TIMEOUTS
+# 3. Agent Config - Corrected to Max Allowable Range (30s)
 cat > "$ZABBIX_CONF" <<EOF
 PidFile=/var/run/zabbix/zabbix_agent2.pid
-Timeout=60
+Timeout=30
 LogFile=/dev/stdout
 LogFileSize=0
 ServerActive=${SERVER_HOST}:10051

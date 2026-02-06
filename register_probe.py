@@ -70,7 +70,7 @@ def register():
         host_id = hosts[0]['hostid']
         log(f"✅ Host exists (ID: {host_id}). Syncing current PSK to server...")
         
-        # SYNC FIX: Overwrite the server PSK with our current local PSK
+        # Force update the server PSK with our current local PSK
         update_params = {
             "hostid": host_id,
             "tls_psk_identity": PSK_IDENTITY,

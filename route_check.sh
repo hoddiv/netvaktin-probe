@@ -1,11 +1,11 @@
 #!/bin/bash
-# Netvaktin Probe - Universal Route Analyzer v3.3
+# Netvaktin Probe - Universal Route Analyzer v3.4
 # Usage: ./route_check.sh <TARGET_IP> [LABEL]
 
 set -euo pipefail
 
-# --- Watchdog: Global safety net (45s) to prevent PID exhaustion ---
-(sleep 45; kill $$ 2>/dev/null) &
+# --- Watchdog: Safety net (25s) to stay under Agent's 30s limit ---
+(sleep 25; kill $$ 2>/dev/null) &
 WATCHDOG_PID=$!
 
 TARGET="${1:-}"
@@ -38,8 +38,8 @@ readonly SIG_JANET="146.97."
 readonly SIG_VODAFONE_UK="89.10."
 readonly SIG_VODAFONE_IS="217.151."
 
-# 1. Run Trace with Tighter Timeout (15s) for Universal Compatibility
-if ! raw_trace=$(timeout 15 mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
+# 1. Run Trace with Tighter Timeout (10s) for Universal Compatibility
+if ! raw_trace=$(timeout 10 mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
     kill $WATCHDOG_PID 2>/dev/null
     echo '{"error": "trace_failed_or_timeout", "status": "failed", "label": "'"$LABEL"'"}'
     exit 0
@@ -93,7 +93,7 @@ sig_window=$(echo "$hop_list" | awk '$1>=6 && $1<=12 {printf "%s:%s ", $1, $2} E
 if [ ${#detected_features[@]} -eq 0 ]; then
     feature_string="UNKNOWN"
 else
-    feature_string=$(echo "${detected_features[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')
+    feature_string=$(echo "${detected_features[@]}" | tr ' ' '\\n' | sort -u | tr '\\n' ' ' | sed 's/ $//')
 fi
 
 hash_input=$(echo "$hop_list" | awk '$1>=6 && $1<=9 {print $2}')
