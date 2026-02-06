@@ -1,10 +1,10 @@
 #!/bin/bash
-# Netvaktin Probe - Route Analyzer v3.2 (Bulletproof)
+# Netvaktin Probe - Universal Route Analyzer v3.3
 # Usage: ./route_check.sh <TARGET_IP> [LABEL]
 
 set -euo pipefail
 
-# --- Watchdog: Kill script if it exceeds 45 seconds to prevent PID exhaustion ---
+# --- Watchdog: Global safety net (45s) to prevent PID exhaustion ---
 (sleep 45; kill $$ 2>/dev/null) &
 WATCHDOG_PID=$!
 
@@ -38,8 +38,8 @@ readonly SIG_JANET="146.97."
 readonly SIG_VODAFONE_UK="89.10."
 readonly SIG_VODAFONE_IS="217.151."
 
-# 1. Run Trace with Hard Timeout
-if ! raw_trace=$(timeout 25 mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
+# 1. Run Trace with Tighter Timeout (15s) for Universal Compatibility
+if ! raw_trace=$(timeout 15 mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
     kill $WATCHDOG_PID 2>/dev/null
     echo '{"error": "trace_failed_or_timeout", "status": "failed", "label": "'"$LABEL"'"}'
     exit 0

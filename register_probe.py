@@ -35,12 +35,9 @@ def zapi(method, params):
         return None
 
 def get_id(resource_type, name):
-    """Looks up an ID by name (Template or Host Group)"""
     method = f"{resource_type}.get"
     filter_key = "host" if resource_type == "template" else "name"
-    
     res = zapi(method, {"filter": {filter_key: [name]}})
-    
     if res:
         id_key = f"{resource_type}id"
         if resource_type == "hostgroup": id_key = "groupid"
@@ -73,8 +70,7 @@ def register():
         host_id = hosts[0]['hostid']
         log(f"✅ Host exists (ID: {host_id}). Syncing current PSK to server...")
         
-        # --- THE SYNC FIX ---
-        # If the host exists, we OVERWRITE the PSK on the server with our current local PSK
+        # SYNC FIX: Overwrite the server PSK with our current local PSK
         update_params = {
             "hostid": host_id,
             "tls_psk_identity": PSK_IDENTITY,
@@ -97,7 +93,7 @@ def register():
         }],
         "groups": [{"groupid": group_id}],
         "templates": [{"templateid": template_id}],
-        "tls_connect": 2, # 2 = PSK
+        "tls_connect": 2, 
         "tls_accept": 2,  
         "tls_psk_identity": PSK_IDENTITY,
         "tls_psk": PSK_VALUE

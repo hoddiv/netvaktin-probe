@@ -64,10 +64,10 @@ if [ -n "$ZBX_API_TOKEN" ]; then
     fi
 fi
 
-# 3. Agent Config - CLEAN AND WORKING
+# 3. Agent Config - UNIVERSAL TIMEOUTS
 cat > "$ZABBIX_CONF" <<EOF
 PidFile=/var/run/zabbix/zabbix_agent2.pid
-Timeout=30
+Timeout=60
 LogFile=/dev/stdout
 LogFileSize=0
 ServerActive=${SERVER_HOST}:10051
