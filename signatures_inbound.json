@@ -1,0 +1,28 @@
+{
+  "version": "2.0-inbound",
+  "signatures": {
+    "FARICE-1": {
+      "description": "Arrival via Seyðisfjörður (East)",
+      "gateways": [
+        "217.151.190.", 
+        "89.10.1."
+      ]
+    },
+    "IRIS": {
+      "description": "Arrival via Þorlákshöfn (South-West)",
+      "gateways": [
+        "157.157.55.",
+        "87.44.56.",
+        "ipv4.le-1.iris.is"
+      ]
+    },
+    "DANICE": {
+      "description": "Arrival via Landeyjar (South)",
+      "gateways": [
+        "193.107.84.",
+        "213.167.128.",
+        "82.148.64."
+      ]
+    }
+  }
+}
