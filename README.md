@@ -1,50 +1,59 @@
-# Netvaktin Community Probe v2
+# Netvaktin Community Probe v3.0
 
-**Network monitoring probe for the Netvaktin project.**
+This is the community probe for **[Netvaktin.is](https://netvaktin.is)**.
 
-### Overview
-Runs a **Zabbix Agent 2** (Active Mode) container that performs `mtr` traceroutes to national endpoints. It is designed to work behind residential routers without configuration.
+It is a lightweight Docker container that helps map how Iceland connects to the rest of the world. By running this on your home connection, company network, or VPS, you help us detect if traffic is being routed via **Farice-1** (UK), **Danice** (Denmark), or **Iris** (Ireland).
 
-* **Auto-Registration:** Registers itself via Zabbix API on boot.
-* **Encryption:** Generates its own TLS-PSK keys automatically.
-* **No Port Forwarding:** Uses active (push) checks only. No inbound firewall rules needed.
+### What it does
+1.  **Starts up:** Checks internet connectivity and downloads the latest route signatures from this repo.
+2.  **Registers:** Auto-registers with the Netvaktin central server using an API token.
+3.  **Traces:** Receives a list of targets (like Google, Cloudflare, or University networks) and runs `mtr` (traceroute) to them.
+4.  **Reports:** Sends the path data back to the dashboard to visualize latency and routing changes.
 
-### Architecture
-* **Base:** `zabbix/zabbix-agent2:alpine-7.0`
-* **Scripts:** Python (`exporter.py`) handles registration and MTR parsing.
-* **Security:**
-    * Traffic encrypted via TLS-PSK.
-    * Container requires `--privileged` flag solely for `mtr` raw socket access.
+### Security / Privacy
+* **No Inbound Ports:** It acts as an Active Zabbix Agent. It pushes data out; you do not need to open firewall ports.
+* **Encryption:** It generates its own TLS-PSK keys on first boot.
+* **Scope:** It *only* runs traceroutes (ICMP). It does not inspect other traffic on your network.
 
-### Installation
+---
 
-**Requirements:** Docker, Internet access.
+### Quick Start (The Script)
 
-1.  **Get the code**
-    ```bash
-    git clone https://github.com/hoddiv/netvaktin-probe.git
-    cd netvaktin-probe
-    ```
+The easiest way to get running. Supports x86_64 and ARM64 (Raspberry Pi).
 
-2.  **Build image**
-    (Builds locally to support both AMD64 and ARM64/Pi).
-    ```bash
-    sudo docker build -t netvaktin-probe .
-    ```
-
-3.  **Deploy**
-    Run the wrapper script to generate keys and start the container.
-    ```bash
-    chmod +x deploy.sh
-    ./deploy.sh
-    ```
-    *Enter a unique hostname (e.g., `Probe-Garage`) and your API Token when prompted.*
-
-### Debugging
+**1. Clone & Build**
+We build locally to ensure architecture compatibility.
 ```bash
-# View startup logs
-sudo docker logs netvaktin-Probe-Name
+git clone [https://github.com/hoddiv/netvaktin-probe.git](https://github.com/hoddiv/netvaktin-probe.git)
+cd netvaktin-probe
+sudo docker build -t netvaktin-probe .
 
-# Check status
-sudo docker ps
-```
+2. Deploy Run the helper script. It handles the keys and Docker flags for you.
+chmod +x deploy.sh
+./deploy.sh
+
+The script will ask for:
+Zabbix Token: email admin@netvaktin.is to get one
+Hostname: Name your probe (e.g., Probe-Nova-Rvk or Probe-Hringdu-Akureyri).
+
+Role:
+Domestic: You are in Iceland (monitoring the way out).
+External: You are hosting this on a VPS abroad (monitoring the way in).
+
+Manual Run (Docker Compose / Custom)
+If you prefer running this without the wrapper script, here is the docker run command equivalent.
+Note: mtr requires raw socket access. You must use --net=host (recommended for accurate latency) or explicitly add NET_ADMIN/NET_RAW capabilities.
+docker run -d \
+  --name netvaktin-probe \
+  --net=host \
+  --restart unless-stopped \
+  -e ZBX_SERVER_HOST="monitor.logbirta.is" \
+  -e ZBX_API_TOKEN="YOUR_TOKEN_HERE" \
+  -e ZBX_HOSTNAME="Probe-MyHost" \
+  -e NETVAKTIN_ROLE="Domestic" \
+  netvaktin-probe
+
+File Structure
+route_check.sh: The logic that runs the traceroute and matches it against known submarine cable signatures.
+entrypoint.sh: Startup logic that fetches updates and configures the agent.
+register_probe.py: Handles the API handshake to register the probe automatically.
