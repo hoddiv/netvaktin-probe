@@ -1,7 +1,7 @@
 {
   "version": "1.4",
   "signatures": {
-    "FARICE-1": {
+    "FARICE": {
       "description": "Reykjavik to London (via Scotland)",
       "gateways": [
         "217.151.190.9",
