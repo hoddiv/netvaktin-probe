@@ -1,32 +1,25 @@
 {
-  "version": "2.1-inbound-fix",
+  "version": "2.2-inbound-safe",
   "signatures": {
     "FARICE": {
-      "description": "Siminn/Vodafone (via AMS/LHR)",
+      "description": "Farice path (IX/edge evidence only)",
       "gateways": [
         "80.249.",
-        "157.157.",
-        "193.4.144.",
-        "217.151.190.",
-        "81.15."
+        "195.66."
       ]
     },
     "DANICE": {
-      "description": "Nova/Mila/RIX (via CPH/Cogent)",
+      "description": "Danice path (DK edge evidence only)",
       "gateways": [
-        "154.54.",
-        "154.25.",
-        "62.115.",
-        "82.221.",
-        "193.107.84.",
-        "213.167.128."
+        "192.38.",
+        "130.225."
       ]
     },
     "IRIS": {
-      "description": "Backup Path",
+      "description": "Iris path (IE edge evidence only)",
       "gateways": [
-        "46.212.",
-        "212.30."
+        "87.44.",
+        "185.6.36."
       ]
     }
   }
