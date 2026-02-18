@@ -57,3 +57,25 @@ File Structure
 route_check.sh: The logic that runs the traceroute and matches it against known submarine cable signatures.
 entrypoint.sh: Startup logic that fetches updates and configures the agent.
 register_probe.py: Handles the API handshake to register the probe automatically.
+
+
++-----------------------------------------+                 +--------------------------------+
+|       Community Node (Docker)           |                 |    Netvaktin Infrastructure    |
+|                                         |                 |                                |
+|  1. Initialization (entrypoint.sh)      |                 |                                |
+|     - Fetches latest cable signatures   |                 |                                |
+|     - Generates local TLS-PSK keys      |                 |                                |
+|                                         |                 |                                |
+|  2. Auto-Discovery (register_probe.py)  |   API Token     |      monitor.netvaktin.is       |
+|     - Authenticates via Zabbix API      | ---------------->      (Zabbix Backend)          |
+|     - Registers Hostname & Role         |                 |      - Host Inventory          |
+|                                         |                 |      - Route Hash Analysis     |
+|  3. Execution (route_check.sh)          |                 |      - Alerting / Triggers     |
+|     - Runs `mtr` to external targets    |                 |                                |
+|     - Parses logical paths              |                 |                                |
+|     - Matches against known signatures  |   TLS-PSK       |                                |
+|                                         |   Encrypted     |                                |
+|  4. Data Delivery (Zabbix Active Agent) |   Push Data     |                                |
+|     - Pushes routing state metrics      | ---------------->      netvaktin.is              |
+|     - Pushes latency data               |  (Port 10051)   |      (Public Dashboard)        |
++-----------------------------------------+                 +--------------------------------+
