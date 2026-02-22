@@ -25,8 +25,6 @@ RUN mkdir -p /usr/local/share/netvaktin
 COPY route_check.sh /usr/bin/route_check.sh
 COPY entrypoint.sh /usr/bin/entrypoint.sh
 COPY register_probe.py /usr/bin/register_probe.py
-COPY netvaktin_signatures.json /usr/local/share/netvaktin/netvaktin_signatures.json
-COPY signatures_inbound.json /usr/local/share/netvaktin/signatures_inbound.json
 
 # Set Permissions
 RUN chmod +x /usr/bin/route_check.sh \
