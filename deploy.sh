@@ -93,7 +93,7 @@ sudo docker run -d \
   -e ZBX_TLSPSKIDENTITY="$PSK_ID" \
   -e ZBX_TLSPSKVALUE="$PSK" \
   -e NETVAKTIN_ROLE="$ROLE" \
-  netvaktin-probe-dev
+  netvaktin-probe
 
 if [ $? -eq 0 ]; then
     echo "✅ Success. Container ID: $(sudo docker ps -q -f name=$CONTAINER)"

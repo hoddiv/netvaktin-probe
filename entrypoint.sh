@@ -13,18 +13,19 @@ ROLE="${NETVAKTIN_ROLE:-Domestic}"
 
 if [ "$ROLE" == "External" ]; then
     log "🌍 Mode: EXTERNAL (Inbound Monitoring)"
-    export ZBX_HOSTGROUP_NAME="Netvaktin Dev External Probes"
+    # Swapped to Prod Group
+    export ZBX_HOSTGROUP_NAME="Netvaktin External Probes"
     export ZBX_TEMPLATE_NAME="Template Netvaktin Inbound"
 else
     log "🏠 Mode: DOMESTIC (Outbound Monitoring)"
-    export ZBX_HOSTGROUP_NAME="Netvaktin Dev Probes"
+    # Swapped to Prod Group
+    export ZBX_HOSTGROUP_NAME="Netvaktin Probes"
     export ZBX_TEMPLATE_NAME="Template Netvaktin"
 fi
 
 # === 2. API SELF-REGISTRATION ===
 if [ -n "$ZBX_API_TOKEN" ]; then
     log "🤖 Performing API Self-Registration..."
-    # This executes your register_probe.py!
     python3 /usr/bin/register_probe.py
 else
     log "⚠️ No ZBX_API_TOKEN provided. Skipping registration."
