@@ -9,18 +9,31 @@ PSK_FILE="${ZBX_TLSPSKFILE:-/etc/zabbix/netvaktin.psk}"
 HOSTNAME="${ZBX_HOSTNAME:-UnknownProbe}"
 
 # === 1. ROLE SWITCHING ===
+# NETVAKTIN_ROLE controls prod/dev routing:
+#   Domestic  → prod group "Netvaktin Probes"           + "Template Netvaktin"
+#   External  → prod group "Netvaktin External Probes"  + "Template Netvaktin Inbound"
+#   Dev       → dev group  "Netvaktin Dev Probes"       + "Template Netvaktin Dev"
+#   DevExt    → dev group  "Netvaktin Dev External Probes" + "Template Netvaktin Inbound Dev"
+#
+# Override at any time by setting ZBX_HOSTGROUP_NAME and ZBX_TEMPLATE_NAME directly.
 ROLE="${NETVAKTIN_ROLE:-Domestic}"
 
 if [ "$ROLE" == "External" ]; then
-    log "🌍 Mode: EXTERNAL (Inbound Monitoring)"
-    # Swapped to Prod Group
-    export ZBX_HOSTGROUP_NAME="Netvaktin External Probes"
-    export ZBX_TEMPLATE_NAME="Template Netvaktin Inbound"
+    log "🌍 Mode: EXTERNAL (Inbound Monitoring) — PRODUCTION"
+    export ZBX_HOSTGROUP_NAME="${ZBX_HOSTGROUP_NAME:-Netvaktin External Probes}"
+    export ZBX_TEMPLATE_NAME="${ZBX_TEMPLATE_NAME:-Template Netvaktin Inbound}"
+elif [ "$ROLE" == "Dev" ]; then
+    log "🧪 Mode: DEV DOMESTIC (Outbound Monitoring) — DEV"
+    export ZBX_HOSTGROUP_NAME="${ZBX_HOSTGROUP_NAME:-Netvaktin Dev Probes}"
+    export ZBX_TEMPLATE_NAME="${ZBX_TEMPLATE_NAME:-Template Netvaktin Dev}"
+elif [ "$ROLE" == "DevExt" ]; then
+    log "🧪 Mode: DEV EXTERNAL (Inbound Monitoring) — DEV"
+    export ZBX_HOSTGROUP_NAME="${ZBX_HOSTGROUP_NAME:-Netvaktin Dev External Probes}"
+    export ZBX_TEMPLATE_NAME="${ZBX_TEMPLATE_NAME:-Template Netvaktin Inbound Dev}"
 else
-    log "🏠 Mode: DOMESTIC (Outbound Monitoring)"
-    # Swapped to Prod Group
-    export ZBX_HOSTGROUP_NAME="Netvaktin Probes"
-    export ZBX_TEMPLATE_NAME="Template Netvaktin"
+    log "🏠 Mode: DOMESTIC (Outbound Monitoring) — PRODUCTION"
+    export ZBX_HOSTGROUP_NAME="${ZBX_HOSTGROUP_NAME:-Netvaktin Probes}"
+    export ZBX_TEMPLATE_NAME="${ZBX_TEMPLATE_NAME:-Template Netvaktin}"
 fi
 
 # === 2. API SELF-REGISTRATION ===
@@ -45,6 +58,7 @@ TLSAccept=psk
 TLSPSKIdentity=${ZBX_TLSPSKIDENTITY}
 TLSPSKFile=${PSK_FILE}
 UserParameter=netvaktin.mtr[*],/usr/bin/route_check.sh "\$1" "\$2"
+UserParameter=netvaktin.v5.mtr[*],/usr/bin/route_check_v5.py "\$1" "\$2" "\$3" "\$4" "\$5" "\$6" "\$7"
 EOF
 
 # === 4. START THE AGENT ===

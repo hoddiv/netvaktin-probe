@@ -77,6 +77,7 @@ sudo docker rm -f "$CONTAINER" 2>/dev/null || true
 sudo docker run -d \
   --name "$CONTAINER" \
   --net=host \
+  --cap-add NET_RAW \
   --restart always \
   --init \
   --pids-limit 2000 \
