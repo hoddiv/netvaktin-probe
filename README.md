@@ -3,7 +3,7 @@
 **Network monitoring probe for the Netvaktin project.**
 
 ### Overview
-Runs a **Zabbix Agent 2** (Active Mode) container that performs `mtr` traceroutes to national endpoints. It is designed to work behind residential routers without configuration.
+Runs a **Zabbix Agent 2** (Active Mode) container that performs precise `scamper` Paris-traceroutes (TCP/UDP/ICMP) to national endpoints. It is designed to work behind residential routers seamlessly.
 
 * **Auto-Registration:** Registers itself via Zabbix API on boot.
 * **Encryption:** Generates its own TLS-PSK keys automatically.
@@ -11,10 +11,10 @@ Runs a **Zabbix Agent 2** (Active Mode) container that performs `mtr` traceroute
 
 ### Architecture
 * **Base:** `zabbix/zabbix-agent2:alpine-7.0`
-* **Scripts:** Python (`exporter.py`) handles registration and MTR parsing.
+* **Scripts:** `route_check_v5.py` performs scamper execution and trace parsing. Legacy `route_check.sh` is preserved for raw MTR fallback logic.
 * **Security:**
     * Traffic encrypted via TLS-PSK.
-    * Container requires `--privileged` flag solely for `mtr` raw socket access.
+    * Binary capabilities `cap_net_raw+ep` are applied to the `scamper` binary directly during build for raw socket access.
 
 ### Installation
 

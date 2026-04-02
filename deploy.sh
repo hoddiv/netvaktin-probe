@@ -82,7 +82,7 @@ sudo docker run -d \
   --init \
   --pids-limit 2000 \
   --memory="512m" \
-  --health-cmd="ls /usr/bin/route_check.sh > /dev/null || exit 1" \
+  --health-cmd="ls /usr/bin/route_check_v5.py > /dev/null || exit 1" \
   --health-interval=1m \
   --health-retries=3 \
   -v "$(pwd)/$PSK_FILE":/etc/zabbix/netvaktin.psk \
