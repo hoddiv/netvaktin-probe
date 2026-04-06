@@ -57,8 +57,7 @@ COPY entrypoint.sh /usr/bin/entrypoint.sh
 COPY register_probe.py /usr/bin/register_probe.py
 
 # Set Permissions
-RUN chmod +x /usr/bin/route_check.sh \
-             /usr/bin/route_check_v5.py \
+RUN chmod +x /usr/bin/route_check_v5.py \
              /usr/bin/entrypoint.sh \
              /usr/bin/register_probe.py
 
