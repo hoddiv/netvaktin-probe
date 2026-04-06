@@ -11,7 +11,7 @@ Runs a **Zabbix Agent 2** (Active Mode) container that performs deadline-aware r
 
 ### Architecture
 * **Base:** `zabbix/zabbix-agent2:alpine-7.0`
-* **Scripts:** `route_check_v5.py` is now the universal runner. It enforces a hard time budget, tries Scamper first, falls back to MTR, and emits one normalized V5 JSON payload regardless of engine. Legacy `route_check.sh` is preserved for manual compatibility and emergency rollback.
+* **Scripts:** `route_check_v5.py` is now the universal runner. It enforces a shared time budget, tries Scamper first, falls back to MTR, and emits one normalized V5 JSON payload regardless of engine. Legacy `route_check.sh` is preserved for manual compatibility and emergency rollback.
 * **Security:**
     * Traffic encrypted via TLS-PSK.
     * Binary capabilities `cap_net_raw+ep` are applied to the `scamper` binary directly during build for raw socket access.
@@ -20,8 +20,10 @@ Runs a **Zabbix Agent 2** (Active Mode) container that performs deadline-aware r
 ### Universal Runner Behavior
 * **Hard time budget:** The V5 runner stays under the Zabbix agent's 30-second wall by default (`NETVAKTIN_TRACE_BUDGET_MS=27000`).
 * **Smart fallback:** Scamper gets the first slice of the budget, and MTR gets the reserved fallback window.
-* **Single schema:** Both engines emit the same structured V5 payload shape, including `probe_engine`, `was_fallback`, and `runner_errors` metadata.
+* **Single schema:** Both engines emit the same structured V5 payload shape, including `probe_engine`, `was_fallback`, `runner_errors`, and `engine_attempts` metadata.
+* **Legacy fingerprint:** `path_fingerprint` is still emitted for compatibility, but it is diagnostic only. The backend computes authoritative route hashes.
 * **Debug override:** Set `NETVAKTIN_FORCE_ENGINE=scamper` or `NETVAKTIN_FORCE_ENGINE=mtr` to force one engine during testing.
+* **Budget controls:** `NETVAKTIN_TRACE_BUDGET_MS` controls the total wall-clock budget. `NETVAKTIN_TRACE_FALLBACK_RESERVE_MS` protects time for the MTR fallback.
 
 ### Installation
 
