@@ -66,7 +66,9 @@ TLSConnect=psk
 TLSAccept=psk
 TLSPSKIdentity=${ZBX_TLSPSKIDENTITY}
 TLSPSKFile=${PSK_FILE}
-UserParameter=netvaktin.mtr[*],/usr/bin/route_check.sh "\$1" "\$2"
+# V4 backward compatibility bridge (Maps old Zabbix items to the V5 script)
+UserParameter=netvaktin.mtr[*],/usr/bin/route_check_v5.py "\$2" "\$1" "icmp-paris" "3" "1000" "32" "false"
+# V5 native configuration
 UserParameter=netvaktin.v5.mtr[*],/usr/bin/route_check_v5.py "\$1" "\$2" "\$3" "\$4" "\$5" "\$6" "\$7"
 EOF
 
