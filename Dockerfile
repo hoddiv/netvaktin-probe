@@ -44,7 +44,9 @@ RUN apk add --no-cache \
 # Copy scamper binary from builder stage + add runtime deps
 COPY --from=scamper-builder /usr/local/bin/scamper /usr/local/bin/scamper
 RUN apk add --no-cache openssl libcap \
- && setcap cap_net_raw+ep /usr/local/bin/scamper
+ && setcap cap_net_raw+ep /usr/local/bin/scamper \
+ && MTR_PACKET="$(command -v mtr-packet || true)" \
+ && if [ -n "$MTR_PACKET" ]; then setcap cap_net_raw+ep "$MTR_PACKET"; fi
 
 # Create staging area for assets
 RUN mkdir -p /usr/local/share/netvaktin

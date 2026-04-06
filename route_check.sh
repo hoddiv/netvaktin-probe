@@ -1,5 +1,5 @@
 #!/bin/bash
-# Netvaktin Probe - Dumb Telemetry Agent v4.0
+# Netvaktin Probe - Legacy raw MTR helper kept for compatibility and rollback
 # Usage: ./route_check.sh <TARGET_IP> [LABEL]
 
 set -euo pipefail
@@ -17,7 +17,7 @@ if [[ -z "$TARGET" ]]; then
 fi
 
 # Run Trace with 10s timeout
-if ! raw_trace=$(timeout 10 mtr -r -n -c 1 -w "$TARGET" 2>/dev/null | tail -n +2); then
+if ! raw_trace=$(timeout 10 mtr -r -n -c 1 -w -G 1 "$TARGET" 2>/dev/null | tail -n +2); then
     kill $WATCHDOG_PID 2>/dev/null
     echo '{"error": "trace_failed_or_timeout", "status": "failed", "label": "'"$LABEL"'"}'
     exit 0

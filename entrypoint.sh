@@ -45,6 +45,15 @@ else
 fi
 
 # === 3. ZABBIX AGENT CONFIGURATION ===
+if command -v getcap >/dev/null 2>&1; then
+    for bin in /usr/local/bin/scamper "$(command -v mtr 2>/dev/null || true)" "$(command -v mtr-packet 2>/dev/null || true)"; do
+        [ -n "$bin" ] || continue
+        if [ -x "$bin" ]; then
+            log "🔎 Trace binary: $bin $(getcap "$bin" 2>/dev/null | sed "s#^$bin##")"
+        fi
+    done
+fi
+
 log "⚙️ Generating Zabbix Agent configuration..."
 cat > "$ZABBIX_CONF" <<EOF
 PidFile=/var/run/zabbix/zabbix_agent2.pid
