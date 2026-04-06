@@ -52,7 +52,6 @@ RUN apk add --no-cache openssl libcap \
 RUN mkdir -p /usr/local/share/netvaktin
 
 # Copy Scripts & Assets
-COPY route_check.sh /usr/bin/route_check.sh
 COPY route_check_v5.py /usr/bin/route_check_v5.py
 COPY entrypoint.sh /usr/bin/entrypoint.sh
 COPY register_probe.py /usr/bin/register_probe.py
