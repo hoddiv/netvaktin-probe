@@ -21,7 +21,7 @@ Runs a **Zabbix Agent 2** (Active Mode) container that performs deadline-aware r
 * **Hard time budget:** The V5 runner stays under the Zabbix agent's 30-second wall by default (`NETVAKTIN_TRACE_BUDGET_MS=27000`).
 * **Smart fallback:** Scamper gets the first slice of the budget, and MTR gets the reserved fallback window.
 * **Single schema:** Both engines emit the same structured V5 payload shape, including `probe_engine`, `was_fallback`, `runner_errors`, and `engine_attempts` metadata.
-* **Legacy fingerprint:** `path_fingerprint` is still emitted for compatibility, but it is diagnostic only. The backend computes authoritative route hashes.
+* **Backend-owned route hashing:** The probe only collects and emits normalized measurement data. The backend computes authoritative route hashes and change fingerprints.
 * **Debug override:** Set `NETVAKTIN_FORCE_ENGINE=scamper` or `NETVAKTIN_FORCE_ENGINE=mtr` to force one engine during testing.
 * **Budget controls:** `NETVAKTIN_TRACE_BUDGET_MS` controls the total wall-clock budget. `NETVAKTIN_TRACE_FALLBACK_RESERVE_MS` protects time for the MTR fallback.
 

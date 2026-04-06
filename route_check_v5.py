@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import hashlib
 import ipaddress
 import json
 import math
@@ -184,11 +183,6 @@ def emit_failure(
                 "reached": False,
                 "final_responding_ip": None,
                 "status": "failed",
-            },
-            "path_fingerprint": {
-                "value": "",
-                "mode": "legacy-visible-hop-sha256",
-                "diagnostic_only": True,
             },
         }
     )
@@ -476,16 +470,6 @@ def parse_mtr_raw(stdout_b: bytes, count: int) -> tuple[list[dict[str, Any]], st
     return hops, None, meta
 
 
-def build_path_fingerprint(hops: list[dict[str, Any]]) -> dict[str, Any]:
-    visible = [hop.get("ip") for hop in hops if hop.get("responding") and hop.get("ip")]
-    joined = ",".join(ip for ip in visible if ip)
-    value = hashlib.sha256(joined.encode()).hexdigest()[:16] if joined else ""
-    return {
-        "value": value,
-        "mode": "legacy-visible-hop-sha256",
-        "diagnostic_only": True,
-    }
-
 
 def build_result(
     target_id: str,
@@ -522,7 +506,6 @@ def build_result(
                 "final_responding_ip": final.get("ip") if final else None,
                 "status": terminal_status,
             },
-            "path_fingerprint": build_path_fingerprint(hops),
             "evidence_quality": {
                 "score": 0.93 if reached else (0.15 if responding_hops == 0 else 0.35)
             },
