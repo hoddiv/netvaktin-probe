@@ -56,6 +56,10 @@ fi
 echo ">> Configured as: $ROLE Probe"
 
 # 4. Key Management
+if [ -d "$PSK_FILE" ]; then
+    echo "⚠️  $PSK_FILE is a directory (Docker volume artifact). Removing it..."
+    rm -rf "$PSK_FILE"
+fi
 if [ -f "$PSK_FILE" ]; then
     echo "Using existing PSK."
     PSK=$(cat "$PSK_FILE")

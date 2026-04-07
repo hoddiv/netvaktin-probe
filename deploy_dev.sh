@@ -46,6 +46,10 @@ else
 fi
 
 # Separate PSK file from prod to avoid overwriting it
+if [ -d "$PSK_FILE" ]; then
+    echo "⚠️  $PSK_FILE is a directory (Docker volume artifact). Removing it..."
+    rm -rf "$PSK_FILE"
+fi
 if [ -f "$PSK_FILE" ]; then
     echo "Using existing dev PSK."
     PSK=$(cat "$PSK_FILE")
