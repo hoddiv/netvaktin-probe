@@ -78,7 +78,6 @@ sudo docker run -d \
   --health-cmd="ls /usr/bin/route_check_v5.py > /dev/null || exit 1" \
   --health-interval=1m \
   --health-retries=3 \
-  -v "$(pwd)/$PSK_FILE":/etc/zabbix/netvaktin.psk \
   -e ZBX_HOSTNAME="$HOSTNAME" \
   -e ZBX_SERVER_HOST="$SERVER" \
   -e ZBX_SERVER_PORT="$PORT" \

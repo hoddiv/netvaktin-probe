@@ -44,7 +44,18 @@ else
     log "⚠️ No ZBX_API_TOKEN provided. Skipping registration."
 fi
 
-# === 3. ZABBIX AGENT CONFIGURATION ===
+# === 3. PSK FILE ===
+if [ -n "${ZBX_TLSPSKVALUE:-}" ]; then
+    mkdir -p "$(dirname "$PSK_FILE")"
+    echo "$ZBX_TLSPSKVALUE" > "$PSK_FILE"
+    chmod 600 "$PSK_FILE"
+    log "🔑 PSK written from environment."
+elif [ ! -f "$PSK_FILE" ]; then
+    log "❌ No PSK: ZBX_TLSPSKVALUE not set and $PSK_FILE not found."
+    exit 1
+fi
+
+# === 4. ZABBIX AGENT CONFIGURATION ===
 if command -v getcap >/dev/null 2>&1; then
     for bin in /usr/local/bin/scamper "$(command -v mtr 2>/dev/null || true)" "$(command -v mtr-packet 2>/dev/null || true)"; do
         [ -n "$bin" ] || continue
@@ -72,6 +83,6 @@ UserParameter=netvaktin.mtr[*],/usr/bin/route_check_v5.py "\$2" "\$1" "icmp-pari
 UserParameter=netvaktin.v5.mtr[*],/usr/bin/route_check_v5.py "\$1" "\$2" "\$3" "\$4" "\$5" "\$6" "\$7"
 EOF
 
-# === 4. START THE AGENT ===
+# === 5. START THE AGENT ===
 log "🚀 Starting Zabbix Agent 2..."
 exec /usr/sbin/zabbix_agent2 -c "$ZABBIX_CONF"
