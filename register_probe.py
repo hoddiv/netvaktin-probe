@@ -1,5 +1,6 @@
 import os
 import sys
+import socket
 import requests
 import json
 
@@ -16,6 +17,25 @@ HOST_GROUP_NAME = os.getenv("ZBX_HOSTGROUP_NAME", "Netvaktin Probes")
 
 def log(msg):
     print(f"[Auto-Register] {msg}")
+
+def get_public_ip():
+    """Detect the probe's public IP via external lookup, fall back to outbound socket."""
+    try:
+        r = requests.get("https://api.ipify.org", timeout=5)
+        ip = r.text.strip()
+        if ip:
+            return ip
+    except Exception:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(3)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return ""
 
 def zapi(method, params):
     payload = {
@@ -68,27 +88,47 @@ def register():
     
     if hosts:
         host_id = hosts[0]['hostid']
-        log(f"✅ Host exists (ID: {host_id}). Syncing current PSK to server...")
-        
+        log(f"✅ Host exists (ID: {host_id}). Syncing PSK and IP to server...")
+
+        probe_ip = get_public_ip()
+        log(f"Detected probe IP: {probe_ip or '(unknown)'}")
+
         update_params = {
             "hostid": host_id,
             "tls_psk_identity": PSK_IDENTITY,
             "tls_psk": PSK_VALUE
         }
-        
         res = zapi("host.update", update_params)
         if res:
             log("🔄 PSK updated successfully.")
         else:
             log("❌ Failed to update PSK on server.")
+
+        # Update interface IP if we have one
+        if probe_ip:
+            interfaces = zapi("hostinterface.get", {"hostids": host_id})
+            if interfaces:
+                iface_id = interfaces[0]["interfaceid"]
+                iface_res = zapi("hostinterface.update", {
+                    "interfaceid": iface_id,
+                    "ip": probe_ip,
+                    "dns": "",
+                    "useip": 1
+                })
+                if iface_res:
+                    log(f"🔄 Interface IP updated to {probe_ip}.")
+                else:
+                    log("⚠️ Failed to update interface IP.")
         return
 
     # 3. Create Host (New Probe)
+    probe_ip = get_public_ip()
+    log(f"Detected probe IP: {probe_ip or '(unknown)'}")
     log(f"Registering new probe in group '{HOST_GROUP_NAME}'...")
     create_params = {
         "host": HOSTNAME,
         "interfaces": [{
-            "type": 1, "main": 1, "useip": 0, "ip": "", "dns": "0.0.0.0", "port": "10050"
+            "type": 1, "main": 1, "useip": 1, "ip": probe_ip, "dns": "", "port": "10050"
         }],
         "groups": [{"groupid": group_id}],
         "templates": [{"templateid": template_id}],
