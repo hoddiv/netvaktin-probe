@@ -45,10 +45,17 @@ else
     echo ">> Dev mode: DOMESTIC (Dev)"
 fi
 
+PSK_ID="DevProbe-${HOSTNAME}"
+CONTAINER="netvaktin-dev-${HOSTNAME}"
+
+echo "🧪 Deploying dev probe: $CONTAINER ..."
+# Stop old container FIRST so it releases any bind-mount hold on the PSK path
+sudo docker rm -f "$CONTAINER" 2>/dev/null || true
+
 # Separate PSK file from prod to avoid overwriting it
 if [ -d "$PSK_FILE" ]; then
     echo "⚠️  $PSK_FILE is a directory (Docker volume artifact). Removing it..."
-    rm -rf "$PSK_FILE"
+    sudo rm -rf "$PSK_FILE"
 fi
 if [ -f "$PSK_FILE" ]; then
     echo "Using existing dev PSK."
@@ -59,12 +66,6 @@ else
     echo "$PSK" > "$PSK_FILE"
     chmod 600 "$PSK_FILE"
 fi
-
-PSK_ID="DevProbe-${HOSTNAME}"
-CONTAINER="netvaktin-dev-${HOSTNAME}"
-
-echo "🧪 Deploying dev probe: $CONTAINER ..."
-sudo docker rm -f "$CONTAINER" 2>/dev/null || true
 
 sudo docker run -d \
   --name "$CONTAINER" \

@@ -55,10 +55,17 @@ fi
 
 echo ">> Configured as: $ROLE Probe"
 
+PSK_ID="CommunityProbe-${HOSTNAME}"
+CONTAINER="netvaktin-${HOSTNAME}"
+
 # 4. Key Management
+# Stop old container FIRST so it releases any bind-mount hold on the PSK path
+echo "🚀 Deploying $CONTAINER..."
+sudo docker rm -f "$CONTAINER" 2>/dev/null || true
+
 if [ -d "$PSK_FILE" ]; then
     echo "⚠️  $PSK_FILE is a directory (Docker volume artifact). Removing it..."
-    rm -rf "$PSK_FILE"
+    sudo rm -rf "$PSK_FILE"
 fi
 if [ -f "$PSK_FILE" ]; then
     echo "Using existing PSK."
@@ -70,12 +77,7 @@ else
     chmod 600 "$PSK_FILE"
 fi
 
-PSK_ID="CommunityProbe-${HOSTNAME}"
-CONTAINER="netvaktin-${HOSTNAME}"
-
 # 5. Deployment
-echo "🚀 Deploying $CONTAINER..."
-sudo docker rm -f "$CONTAINER" 2>/dev/null || true
 
 # INCREASED PIDS-LIMIT AND FORK-BASED HEALTHCHECK
 sudo docker run -d \
