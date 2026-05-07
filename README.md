@@ -44,7 +44,7 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-The deploy script now checks that the local `netvaktin-probe` image contains the PSK bootstrap logic before it asks for your API token. If the image is missing or stale, it will stop with refresh/build instructions instead of starting a broken container.
+The deploy script now checks the local image, Docker networking/capability support, and probe runtime prerequisites before it asks for your API token. If the image is missing, stale, or the Docker environment is not suitable, it will stop with a clear message instead of starting a broken container.
 
 Enter a hostname using the `ProbeV5-<Country>-<ISP>` convention (e.g. `ProbeV5-IS-Hringdu`) and your API token when prompted. Select role:
 - `1` Domestic — outbound monitoring from your ISP
@@ -114,6 +114,20 @@ sudo docker ps | grep netvaktin
 ```
 
 ## Troubleshooting
+
+Linux Docker Engine on a normal Linux host is the recommended environment for this probe. Rootless Docker, Docker Desktop, and Docker Desktop-like environments may not support host networking and `NET_RAW` the same way as Linux Docker Engine.
+
+### Run doctor mode first
+
+```bash
+./deploy.sh --doctor
+./deploy_dev.sh --doctor
+```
+
+If doctor mode fails, send back:
+- the full doctor output
+- whether you normally use `docker` or `sudo docker`
+- the output of `docker version` or `sudo docker version`
 
 ### `invalid TLSPSKFile configuration parameter: open /etc/zabbix/netvaktin.psk: no such file or directory`
 

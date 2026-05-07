@@ -10,6 +10,24 @@ IMAGE_NAME="netvaktin-probe"
 AUTO_BUILD_ON_INVALID="${NETVAKTIN_BUILD_IF_INVALID:-0}"
 DOCKER_CMD=()
 DOCKER_PREFIX_DISPLAY="docker"
+DOCTOR_MODE=0
+PREFLIGHT_WARNINGS=()
+PREFLIGHT_FAILURES=()
+
+if [ "${1:-}" = "--doctor" ]; then
+    DOCTOR_MODE=1
+    shift
+fi
+
+record_warning() {
+    PREFLIGHT_WARNINGS+=("$*")
+    echo "⚠️  $*"
+}
+
+record_failure() {
+    PREFLIGHT_FAILURES+=("$*")
+    echo "❌ $*"
+}
 
 setup_docker_access() {
     if docker info >/dev/null 2>&1; then
@@ -54,19 +72,42 @@ print_image_refresh_help() {
     echo "   Optional: set NETVAKTIN_BUILD_IF_INVALID=1 to let this script rebuild locally when validation fails."
 }
 
+check_docker_environment() {
+    local server_version operating_system architecture security_options
+
+    server_version="$(run_docker info --format '{{.ServerVersion}}' 2>/dev/null || echo unknown)"
+    operating_system="$(run_docker info --format '{{.OperatingSystem}}' 2>/dev/null || echo unknown)"
+    architecture="$(run_docker info --format '{{.Architecture}}' 2>/dev/null || echo unknown)"
+    security_options="$(run_docker info --format '{{json .SecurityOptions}}' 2>/dev/null || echo '[]')"
+
+    echo "ℹ️  Docker server: $server_version | OS: $operating_system | Arch: $architecture"
+
+    if echo "$security_options" | grep -qi rootless; then
+        record_warning "Docker appears rootless. Linux Docker Engine is recommended because the probe depends on host networking and NET_RAW."
+    fi
+
+    case "$operating_system" in
+        *"Docker Desktop"*|*"Rancher Desktop"*|*"Colima"*|*"OrbStack"*)
+            record_warning "Docker Desktop-like environments may not support host networking and NET_RAW the same way as Linux Docker Engine."
+            ;;
+    esac
+}
+
 validate_probe_image() {
     if ! run_docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
         if [ "$AUTO_BUILD_ON_INVALID" = "1" ]; then
             echo "⚠️  Local image '$IMAGE_NAME' not found. Building it now because NETVAKTIN_BUILD_IF_INVALID=1..."
             run_docker build --pull --no-cache -t "$IMAGE_NAME" . || return 1
         else
+            record_failure "Local Docker image '$IMAGE_NAME' is missing."
             print_image_refresh_help
             return 1
         fi
     fi
 
     if run_docker run --rm --entrypoint sh "$IMAGE_NAME" -c \
-        "grep -q 'ZBX_TLSPSKVALUE' /usr/bin/entrypoint.sh && \
+        "test -x /usr/bin/entrypoint.sh && \
+         grep -q 'ZBX_TLSPSKVALUE' /usr/bin/entrypoint.sh && \
          grep -q 'TLSPSKFile' /usr/bin/entrypoint.sh && \
          grep -q 'TLS PSK file ready' /usr/bin/entrypoint.sh"; then
         echo "✅ Image preflight passed: '$IMAGE_NAME' contains PSK bootstrap support."
@@ -77,17 +118,122 @@ validate_probe_image() {
         echo "⚠️  Local image '$IMAGE_NAME' is stale. Rebuilding it now because NETVAKTIN_BUILD_IF_INVALID=1..."
         run_docker build --pull --no-cache -t "$IMAGE_NAME" . || return 1
         if run_docker run --rm --entrypoint sh "$IMAGE_NAME" -c \
-            "grep -q 'ZBX_TLSPSKVALUE' /usr/bin/entrypoint.sh && \
+            "test -x /usr/bin/entrypoint.sh && \
+             grep -q 'ZBX_TLSPSKVALUE' /usr/bin/entrypoint.sh && \
              grep -q 'TLSPSKFile' /usr/bin/entrypoint.sh && \
              grep -q 'TLS PSK file ready' /usr/bin/entrypoint.sh"; then
             echo "✅ Image preflight passed after local rebuild."
             return 0
         fi
+        record_failure "Local Docker image '$IMAGE_NAME' is still stale after local rebuild."
         print_image_refresh_help
         return 1
     fi
 
+    record_failure "Local Docker image '$IMAGE_NAME' is stale."
     print_image_refresh_help
+    return 1
+}
+
+run_runtime_preflight() {
+    local runtime_output runtime_status
+
+    runtime_output="$(
+        run_docker run --rm --net=host --cap-add NET_RAW --entrypoint sh "$IMAGE_NAME" -c '
+            set -eu
+
+            entrypoint_path=/usr/bin/entrypoint.sh
+            scamper_path=/usr/local/bin/scamper
+            zabbix_agent2_path=/usr/sbin/zabbix_agent2
+            mtr_path="$(command -v mtr 2>/dev/null || true)"
+            mtr_packet_path="$(command -v mtr-packet 2>/dev/null || true)"
+
+            test -x "$entrypoint_path"
+            test -x "$scamper_path"
+            test -x "$zabbix_agent2_path"
+
+            if [ -z "$mtr_path" ]; then
+                if [ -x /usr/sbin/mtr ]; then
+                    mtr_path=/usr/sbin/mtr
+                else
+                    echo "missing:mtr"
+                    exit 21
+                fi
+            fi
+
+            if ! command -v getcap >/dev/null 2>&1; then
+                echo "missing:getcap"
+                exit 22
+            fi
+
+            scamper_cap="$(getcap "$scamper_path" 2>/dev/null || true)"
+            echo "entrypoint:$entrypoint_path"
+            echo "scamper:$scamper_path"
+            echo "mtr:$mtr_path"
+            echo "zabbix_agent2:$zabbix_agent2_path"
+            echo "scamper_cap:${scamper_cap:-missing}"
+            echo "$scamper_cap" | grep -q "cap_net_raw"
+
+            if [ -n "$mtr_packet_path" ]; then
+                mtr_packet_cap="$(getcap "$mtr_packet_path" 2>/dev/null || true)"
+                echo "mtr_packet:$mtr_packet_path"
+                echo "mtr_packet_cap:${mtr_packet_cap:-missing}"
+                echo "$mtr_packet_cap" | grep -q "cap_net_raw"
+            else
+                echo "mtr_packet:(not present)"
+            fi
+        ' 2>&1
+    )"
+    runtime_status=$?
+
+    if [ $runtime_status -ne 0 ]; then
+        if echo "$runtime_output" | grep -qi "exec format error"; then
+            record_failure "Selected image '$IMAGE_NAME' cannot run on this host architecture. Pull a current multi-arch image or build locally on this machine."
+        else
+            record_failure "Docker runtime preflight failed for '$IMAGE_NAME' with --net=host --cap-add NET_RAW."
+            echo "   Linux Docker Engine is recommended for this probe."
+        fi
+        if [ -n "$runtime_output" ]; then
+            echo "$runtime_output"
+        fi
+        return 1
+    fi
+
+    echo "✅ Runtime preflight passed: host networking, NET_RAW, and probe tools are available."
+    if [ "$DOCTOR_MODE" = "1" ] && [ -n "$runtime_output" ]; then
+        echo "$runtime_output"
+    fi
+    return 0
+}
+
+run_all_preflights() {
+    check_docker_environment
+
+    if ! validate_probe_image; then
+        return 1
+    fi
+
+    if ! run_runtime_preflight; then
+        return 1
+    fi
+
+    return 0
+}
+
+print_doctor_summary() {
+    local warning_count failure_count
+    warning_count="${#PREFLIGHT_WARNINGS[@]}"
+    failure_count="${#PREFLIGHT_FAILURES[@]}"
+
+    if [ "$failure_count" -eq 0 ]; then
+        echo "✅ Doctor summary: all preflight checks passed."
+        if [ "$warning_count" -gt 0 ]; then
+            echo "⚠️  Doctor summary: $warning_count warning(s) noted."
+        fi
+        return 0
+    fi
+
+    echo "❌ Doctor summary: $failure_count failure(s), $warning_count warning(s)."
     return 1
 }
 
@@ -101,8 +247,20 @@ if ! setup_docker_access; then
     exit 1
 fi
 
-if ! validate_probe_image; then
+if [ "$DOCTOR_MODE" = "1" ]; then
+    echo "🩺 Running deploy doctor checks..."
+fi
+
+if ! run_all_preflights; then
+    if [ "$DOCTOR_MODE" = "1" ]; then
+        print_doctor_summary
+    fi
     exit 1
+fi
+
+if [ "$DOCTOR_MODE" = "1" ]; then
+    print_doctor_summary
+    exit 0
 fi
 
 # 2. Credential Handling
