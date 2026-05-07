@@ -28,9 +28,11 @@ docker pull ghcr.io/hoddiv/netvaktin-probe:latest
 docker tag ghcr.io/hoddiv/netvaktin-probe:latest netvaktin-probe
 ```
 
+Re-run those two commands before upgrades so your local `netvaktin-probe` tag matches the current `latest` image.
+
 **Option B — Build locally** (if you prefer or are on an unusual architecture):
 ```bash
-sudo docker build -t netvaktin-probe .
+sudo docker build --pull --no-cache -t netvaktin-probe .
 ```
 
 ### 3. Deploy
@@ -39,6 +41,8 @@ sudo docker build -t netvaktin-probe .
 chmod +x deploy.sh
 ./deploy.sh
 ```
+
+The deploy script now checks that the local `netvaktin-probe` image contains the PSK bootstrap logic before it asks for your API token. If the image is missing or stale, it will stop with refresh/build instructions instead of starting a broken container.
 
 Enter a hostname using the `ProbeV5-<Country>-<ISP>` convention (e.g. `ProbeV5-IS-Hringdu`) and your API token when prompted. Select role:
 - `1` Domestic — outbound monitoring from your ISP
@@ -106,3 +110,44 @@ sudo docker ps | grep netvaktin
 # Verify Zabbix registration
 # Look for "[Auto-Register] REGISTRATION SUCCESSFUL" or "Host exists. Syncing PSK and IP"
 ```
+
+## Troubleshooting
+
+### `invalid TLSPSKFile configuration parameter: open /etc/zabbix/netvaktin.psk: no such file or directory`
+
+This means the container image being run does not contain the current entrypoint logic that writes `/etc/zabbix/netvaktin.psk` from `ZBX_TLSPSKVALUE`, or that PSK file creation failed before `zabbix_agent2` started.
+
+Refresh the local image tag, then redeploy:
+
+```bash
+docker pull ghcr.io/hoddiv/netvaktin-probe:latest
+docker tag ghcr.io/hoddiv/netvaktin-probe:latest netvaktin-probe
+./deploy.sh
+```
+
+If you prefer not to use the registry image, rebuild locally instead:
+
+```bash
+sudo docker build --pull --no-cache -t netvaktin-probe .
+./deploy.sh
+```
+
+If you want the deploy scripts to rebuild automatically when they detect a missing or stale local image, opt in explicitly:
+
+```bash
+NETVAKTIN_BUILD_IF_INVALID=1 ./deploy.sh
+NETVAKTIN_BUILD_IF_INVALID=1 ./deploy_dev.sh DEV-ProbeV5-IS-Hringdu
+```
+
+When the container is current, startup logs should show both of these lines before `Starting Zabbix Agent 2...`:
+
+```text
+PSK written from environment to /etc/zabbix/netvaktin.psk.
+TLS PSK file ready at /etc/zabbix/netvaktin.psk.
+```
+
+## Release Notes
+
+The GitHub Container Registry image `ghcr.io/hoddiv/netvaktin-probe:latest` is intended to be published from `main`. If you are testing unpublished local changes, build locally and tag the image as `netvaktin-probe`.
+
+IPv6 probing is intentionally out of scope for this V5 community probe rollout. If added later, it should ship as a separate, explicitly labeled measurement family rather than being mixed into the current IPv4-oriented route set.

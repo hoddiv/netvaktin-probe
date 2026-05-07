@@ -49,11 +49,18 @@ if [ -n "${ZBX_TLSPSKVALUE:-}" ]; then
     mkdir -p "$(dirname "$PSK_FILE")"
     echo "$ZBX_TLSPSKVALUE" > "$PSK_FILE"
     chmod 600 "$PSK_FILE"
-    log "🔑 PSK written from environment."
+    log "🔑 PSK written from environment to $PSK_FILE."
 elif [ ! -f "$PSK_FILE" ]; then
     log "❌ No PSK: ZBX_TLSPSKVALUE not set and $PSK_FILE not found."
     exit 1
 fi
+
+if [ ! -s "$PSK_FILE" ]; then
+    log "❌ TLS PSK file is missing or empty at $PSK_FILE. Refusing to start Zabbix Agent 2."
+    exit 1
+fi
+
+log "🔐 TLS PSK file ready at $PSK_FILE."
 
 # === 4. ZABBIX AGENT CONFIGURATION ===
 if command -v getcap >/dev/null 2>&1; then
