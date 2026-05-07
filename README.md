@@ -22,7 +22,7 @@ cd netvaktin-probe-v5
 
 ### 2. Get the image
 
-If your host requires `sudo` for Docker, prefix the `docker` commands below with `sudo`. The deploy scripts themselves now detect whether they should use plain `docker` or `sudo docker`.
+If your host requires `sudo` for Docker, prefix the `docker` commands below with `sudo`. The deploy scripts themselves detect whether they should use plain `docker` or `sudo docker`, and may prompt for your sudo password during the preflight checks.
 
 **Option A — Pull from registry (recommended):**
 ```bash

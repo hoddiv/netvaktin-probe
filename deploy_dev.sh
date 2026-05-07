@@ -24,14 +24,14 @@ setup_docker_access() {
         return 0
     fi
 
-    if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
+    if command -v sudo >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
         DOCKER_CMD=(sudo docker)
         DOCKER_PREFIX_DISPLAY="sudo docker"
         return 0
     fi
 
     echo "❌ Error: Docker is installed but this shell cannot access the Docker daemon."
-    echo "   Use an account with Docker access, or configure passwordless 'sudo docker' for this script."
+    echo "   Use an account with Docker access, or verify that 'sudo docker info' works on this host."
     return 1
 }
 
