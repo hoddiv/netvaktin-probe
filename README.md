@@ -22,6 +22,8 @@ cd netvaktin-probe-v5
 
 ### 2. Get the image
 
+If your host requires `sudo` for Docker, prefix the `docker` commands below with `sudo`. The deploy scripts themselves now detect whether they should use plain `docker` or `sudo docker`.
+
 **Option A — Pull from registry (recommended):**
 ```bash
 docker pull ghcr.io/hoddiv/netvaktin-probe:latest
@@ -32,7 +34,7 @@ Re-run those two commands before upgrades so your local `netvaktin-probe` tag ma
 
 **Option B — Build locally** (if you prefer or are on an unusual architecture):
 ```bash
-sudo docker build --pull --no-cache -t netvaktin-probe .
+docker build --pull --no-cache -t netvaktin-probe .
 ```
 
 ### 3. Deploy
@@ -128,7 +130,7 @@ docker tag ghcr.io/hoddiv/netvaktin-probe:latest netvaktin-probe
 If you prefer not to use the registry image, rebuild locally instead:
 
 ```bash
-sudo docker build --pull --no-cache -t netvaktin-probe .
+docker build --pull --no-cache -t netvaktin-probe .
 ./deploy.sh
 ```
 
@@ -144,6 +146,12 @@ When the container is current, startup logs should show both of these lines befo
 ```text
 PSK written from environment to /etc/zabbix/netvaktin.psk.
 TLS PSK file ready at /etc/zabbix/netvaktin.psk.
+```
+
+If you want to inspect the local image directly before redeploying, this doctor command should print the PSK bootstrap markers from the image entrypoint:
+
+```bash
+docker run --rm --entrypoint sh netvaktin-probe -c "grep -n 'ZBX_TLSPSKVALUE\\|TLSPSKFile\\|TLS PSK file ready' /usr/bin/entrypoint.sh"
 ```
 
 ## Release Notes
