@@ -131,6 +131,8 @@ If doctor mode fails, send back:
 
 If doctor mode passes but deployment later fails after you enter the API token, do not resend the token. Send back the last 80 lines of container logs instead, because template/group/API-permission errors appear there.
 
+Doctor mode uses the probe image itself for Docker runtime and connectivity checks. `openssl` is only required when the script needs to generate a new local PSK file.
+
 ### What to send if it fails
 
 ```bash

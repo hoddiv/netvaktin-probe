@@ -199,6 +199,19 @@ check_local_psk_path() {
     return 0
 }
 
+check_local_psk_generation_dependency() {
+    if [ -f "$PSK_FILE" ] && [ -s "$PSK_FILE" ]; then
+        return 0
+    fi
+
+    if ! command -v openssl >/dev/null 2>&1; then
+        record_failure "openssl is required to generate a local PSK; install openssl or provide an existing $PSK_FILE file."
+        return 1
+    fi
+
+    return 0
+}
+
 check_server_connectivity() {
     local dns_output tcp_output
 
@@ -207,7 +220,7 @@ check_server_connectivity() {
         return 0
     fi
 
-    dns_output="$(python3 - "$SERVER" <<'PY'
+    dns_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
 import socket, sys
 host = sys.argv[1]
 try:
@@ -221,8 +234,7 @@ for item in infos:
     if addr not in seen:
         seen.append(addr)
 print(" ".join(seen))
-PY
-)"
+' "$SERVER" 2>&1)"
     if [ $? -ne 0 ]; then
         record_failure "DNS resolution failed for $SERVER."
         echo "$dns_output"
@@ -231,7 +243,7 @@ PY
 
     echo "ℹ️  $SERVER resolves to: $dns_output"
 
-    tcp_output="$(python3 - "$SERVER" "$PORT" <<'PY'
+    tcp_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
 import socket, sys
 host = sys.argv[1]
 port = int(sys.argv[2])
@@ -242,8 +254,7 @@ except Exception as exc:
     print(f"error:{exc}")
     sys.exit(1)
 print("connected")
-PY
-)"
+' "$SERVER" "$PORT" 2>&1)"
     if [ $? -ne 0 ]; then
         record_failure "Outbound TCP connectivity test to $SERVER:$PORT failed."
         echo "$tcp_output"
@@ -374,6 +385,10 @@ run_all_preflights() {
     check_hostname_guidance
 
     if ! check_local_psk_path; then
+        return 1
+    fi
+
+    if ! check_local_psk_generation_dependency; then
         return 1
     fi
 
