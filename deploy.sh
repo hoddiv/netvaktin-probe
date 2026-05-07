@@ -8,11 +8,15 @@ PSK_FILE="netvaktin.psk"
 CONTAINER_PSK_FILE="/etc/zabbix/netvaktin.psk"
 IMAGE_NAME="netvaktin-probe"
 AUTO_BUILD_ON_INVALID="${NETVAKTIN_BUILD_IF_INVALID:-0}"
+SKIP_REMOTE_PREFLIGHT="${NETVAKTIN_SKIP_REMOTE_PREFLIGHT:-0}"
 DOCKER_CMD=()
 DOCKER_PREFIX_DISPLAY="docker"
 DOCTOR_MODE=0
 PREFLIGHT_WARNINGS=()
 PREFLIGHT_FAILURES=()
+HOSTNAME=""
+ROLE=""
+HOSTNAME_PATTERN='^ProbeV5-[A-Z]{2}-[A-Za-z0-9._-]+$'
 
 if [ "${1:-}" = "--doctor" ]; then
     DOCTOR_MODE=1
@@ -36,7 +40,7 @@ setup_docker_access() {
         return 0
     fi
 
-    if command -v sudo >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
+    if command -v sudo >/dev/null 2>&1 && sudo docker info >/dev/null; then
         DOCKER_CMD=(sudo docker)
         DOCKER_PREFIX_DISPLAY="sudo docker"
         return 0
@@ -49,6 +53,37 @@ setup_docker_access() {
 
 run_docker() {
     "${DOCKER_CMD[@]}" "$@"
+}
+
+resolve_hostname_and_role() {
+    if [ -n "${1:-}" ]; then
+        HOSTNAME="$1"
+    elif [ "$DOCTOR_MODE" = "1" ]; then
+        HOSTNAME=""
+    else
+        read -p "🖥️  Hostname (e.g., ProbeV5-IS-Hringdu): " HOSTNAME
+    fi
+
+    if [ "$DOCTOR_MODE" != "1" ] && [ -z "$HOSTNAME" ]; then
+        echo "❌ Error: Hostname required."
+        exit 1
+    fi
+
+    if [ -n "${2:-}" ]; then
+        ROLE="$2"
+    elif [ "$DOCTOR_MODE" = "1" ]; then
+        ROLE="Domestic"
+    else
+        echo "Select Probe Role:"
+        echo "  1) Domestic (Outbound Monitoring - Default)"
+        echo "  2) External (Inbound Monitoring - e.g., Hetzner)"
+        read -p "Choice [1]: " ROLE_CHOICE
+
+        case "$ROLE_CHOICE" in
+            2) ROLE="External" ;;
+            *) ROLE="Domestic" ;;
+        esac
+    fi
 }
 
 remove_local_path() {
@@ -73,17 +108,31 @@ print_image_refresh_help() {
 }
 
 check_docker_environment() {
-    local server_version operating_system architecture security_options
+    local server_version operating_system architecture security_options docker_root_dir docker_bin docker_major
 
     server_version="$(run_docker info --format '{{.ServerVersion}}' 2>/dev/null || echo unknown)"
     operating_system="$(run_docker info --format '{{.OperatingSystem}}' 2>/dev/null || echo unknown)"
     architecture="$(run_docker info --format '{{.Architecture}}' 2>/dev/null || echo unknown)"
+    docker_root_dir="$(run_docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo unknown)"
     security_options="$(run_docker info --format '{{json .SecurityOptions}}' 2>/dev/null || echo '[]')"
+    docker_bin="$(command -v docker 2>/dev/null || echo docker)"
 
+    echo "ℹ️  Docker access mode: $DOCKER_PREFIX_DISPLAY"
+    echo "ℹ️  Docker binary: $docker_bin"
     echo "ℹ️  Docker server: $server_version | OS: $operating_system | Arch: $architecture"
+    echo "ℹ️  Docker root dir: $docker_root_dir"
+
+    docker_major="$(printf '%s' "$server_version" | awk -F. '{print $1}')"
+    if [ -n "$docker_major" ] && [ "$docker_major" != "unknown" ] 2>/dev/null && [ "$docker_major" -lt 24 ] 2>/dev/null; then
+        record_warning "Docker server version $server_version is older than the recommended baseline. Upgrade if networking or capability issues appear."
+    fi
 
     if echo "$security_options" | grep -qi rootless; then
         record_warning "Docker appears rootless. Linux Docker Engine is recommended because the probe depends on host networking and NET_RAW."
+    fi
+
+    if printf '%s\n%s\n' "$docker_bin" "$docker_root_dir" | grep -qi '/snap/'; then
+        record_warning "Docker appears to come from a snap-style install. Host networking and capabilities can behave differently across snap packaging."
     fi
 
     case "$operating_system" in
@@ -91,6 +140,114 @@ check_docker_environment() {
             record_warning "Docker Desktop-like environments may not support host networking and NET_RAW the same way as Linux Docker Engine."
             ;;
     esac
+}
+
+check_disk_space() {
+    local avail_kb
+    avail_kb="$(df -Pk . | awk 'NR==2 {print $4}')"
+    if [ -n "$avail_kb" ] && [ "$avail_kb" -lt 1048576 ] 2>/dev/null; then
+        record_warning "Less than 1 GiB of free disk space is available in $(pwd). Local builds or container writes may fail."
+    fi
+}
+
+check_existing_containers() {
+    local existing
+    existing="$(run_docker ps -a --format '{{.Names}}' 2>/dev/null | grep '^netvaktin' || true)"
+    if [ -n "$existing" ]; then
+        record_warning "Existing Netvaktin containers detected:"
+        printf '%s\n' "$existing"
+    fi
+}
+
+check_hostname_guidance() {
+    if [ -z "$HOSTNAME" ]; then
+        record_warning "No hostname supplied. Skipping hostname-format check in doctor mode."
+        return 0
+    fi
+
+    if ! [[ "$HOSTNAME" =~ $HOSTNAME_PATTERN ]]; then
+        record_warning "Hostname '$HOSTNAME' does not match the recommended format ProbeV5-<CC>-<ISP>."
+    fi
+}
+
+check_local_psk_path() {
+    if [ -d "$PSK_FILE" ]; then
+        record_failure "Local PSK path '$PSK_FILE' is a directory. Remove it before deploying."
+        return 1
+    fi
+
+    if [ -e "$PSK_FILE" ] && [ ! -r "$PSK_FILE" ]; then
+        record_failure "Local PSK file '$PSK_FILE' exists but is not readable by this user."
+        return 1
+    fi
+
+    if [ -f "$PSK_FILE" ] && [ ! -s "$PSK_FILE" ]; then
+        record_failure "Local PSK file '$PSK_FILE' exists but is empty. Remove it before deploying so a new PSK can be generated."
+        return 1
+    fi
+
+    if [ -f "$PSK_FILE" ]; then
+        echo "ℹ️  Local PSK file present and will be reused: $PSK_FILE"
+    else
+        echo "ℹ️  Local PSK file not present. A new PSK will be generated during deploy: $PSK_FILE"
+    fi
+
+    return 0
+}
+
+check_server_connectivity() {
+    local dns_output tcp_output
+
+    if [ "$SKIP_REMOTE_PREFLIGHT" = "1" ]; then
+        record_warning "Skipping DNS/TCP preflight for $SERVER because NETVAKTIN_SKIP_REMOTE_PREFLIGHT=1."
+        return 0
+    fi
+
+    dns_output="$(python3 - "$SERVER" <<'PY'
+import socket, sys
+host = sys.argv[1]
+try:
+    infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+except Exception as exc:
+    print(f"error:{exc}")
+    sys.exit(1)
+seen = []
+for item in infos:
+    addr = item[4][0]
+    if addr not in seen:
+        seen.append(addr)
+print(" ".join(seen))
+PY
+)"
+    if [ $? -ne 0 ]; then
+        record_failure "DNS resolution failed for $SERVER."
+        echo "$dns_output"
+        return 1
+    fi
+
+    echo "ℹ️  $SERVER resolves to: $dns_output"
+
+    tcp_output="$(python3 - "$SERVER" "$PORT" <<'PY'
+import socket, sys
+host = sys.argv[1]
+port = int(sys.argv[2])
+try:
+    with socket.create_connection((host, port), timeout=5):
+        pass
+except Exception as exc:
+    print(f"error:{exc}")
+    sys.exit(1)
+print("connected")
+PY
+)"
+    if [ $? -ne 0 ]; then
+        record_failure "Outbound TCP connectivity test to $SERVER:$PORT failed."
+        echo "$tcp_output"
+        return 1
+    fi
+
+    echo "✅ Outbound TCP connectivity to $SERVER:$PORT succeeded."
+    return 0
 }
 
 validate_probe_image() {
@@ -208,12 +365,23 @@ run_runtime_preflight() {
 
 run_all_preflights() {
     check_docker_environment
+    check_disk_space
+    check_existing_containers
+    check_hostname_guidance
+
+    if ! check_local_psk_path; then
+        return 1
+    fi
 
     if ! validate_probe_image; then
         return 1
     fi
 
     if ! run_runtime_preflight; then
+        return 1
+    fi
+
+    if ! check_server_connectivity; then
         return 1
     fi
 
@@ -247,6 +415,8 @@ if ! setup_docker_access; then
     exit 1
 fi
 
+resolve_hostname_and_role "${1:-}" "${2:-}"
+
 if [ "$DOCTOR_MODE" = "1" ]; then
     echo "🩺 Running deploy doctor checks..."
 fi
@@ -275,35 +445,6 @@ if [ -z "$ZBX_API_TOKEN" ]; then
 fi
 
 # 3. Host Identity & Role Selection
-# Usage: ./deploy.sh [HOSTNAME] [ROLE]
-
-# A. Hostname
-if [ -n "${1:-}" ]; then
-    HOSTNAME="$1"
-else
-    read -p "🖥️  Hostname (e.g., Probe-Garage-01): " HOSTNAME
-fi
-
-if [ -z "$HOSTNAME" ]; then
-    echo "❌ Error: Hostname required."
-    exit 1
-fi
-
-# B. Role (New Logic)
-if [ -n "${2:-}" ]; then
-    ROLE="$2"
-else
-    echo "Select Probe Role:"
-    echo "  1) Domestic (Outbound Monitoring - Default)"
-    echo "  2) External (Inbound Monitoring - e.g., Hetzner)"
-    read -p "Choice [1]: " ROLE_CHOICE
-    
-    case "$ROLE_CHOICE" in
-        2) ROLE="External" ;;
-        *) ROLE="Domestic" ;;
-    esac
-fi
-
 echo ">> Configured as: $ROLE Probe"
 
 PSK_ID="CommunityProbe-${HOSTNAME}"

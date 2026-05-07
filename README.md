@@ -129,6 +129,18 @@ If doctor mode fails, send back:
 - whether you normally use `docker` or `sudo docker`
 - the output of `docker version` or `sudo docker version`
 
+If doctor mode passes but deployment later fails after you enter the API token, do not resend the token. Send back the last 80 lines of container logs instead, because template/group/API-permission errors appear there.
+
+### What to send if it fails
+
+```bash
+./deploy.sh --doctor
+docker ps -a | grep netvaktin
+docker logs netvaktin-<hostname> --tail 80
+uname -a
+docker version
+```
+
 ### `invalid TLSPSKFile configuration parameter: open /etc/zabbix/netvaktin.psk: no such file or directory`
 
 This means the container image being run does not contain the current entrypoint logic that writes `/etc/zabbix/netvaktin.psk` from `ZBX_TLSPSKVALUE`, or that PSK file creation failed before `zabbix_agent2` started.
