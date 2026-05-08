@@ -6,7 +6,10 @@ log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"; }
 # === CONFIGURATION ===
 ZABBIX_CONF="/etc/zabbix/zabbix_agent2.conf"
 PSK_FILE="${ZBX_TLSPSKFILE:-/etc/zabbix/netvaktin.psk}"
-HOSTNAME="${ZBX_HOSTNAME:-UnknownProbe}"
+HOSTNAME="${ZBX_HOSTNAME:-}"
+SERVER_HOST="${ZBX_SERVER_HOST:-}"
+SERVER_PORT="${ZBX_SERVER_PORT:-10051}"
+PSK_IDENTITY="${ZBX_TLSPSKIDENTITY:-}"
 
 # === 1. ROLE SWITCHING ===
 # NETVAKTIN_ROLE controls prod/dev routing:
@@ -63,6 +66,14 @@ fi
 log "🔐 TLS PSK file ready at $PSK_FILE."
 
 # === 4. ZABBIX AGENT CONFIGURATION ===
+for required_name in HOSTNAME SERVER_HOST PSK_IDENTITY; do
+    required_value="$(eval "printf '%s' \"\${$required_name}\"")"
+    if [ -z "$required_value" ]; then
+        log "❌ Required environment value missing: $required_name"
+        exit 1
+    fi
+done
+
 if command -v getcap >/dev/null 2>&1; then
     for bin in /usr/local/bin/scamper "$(command -v mtr 2>/dev/null || true)" "$(command -v mtr-packet 2>/dev/null || true)"; do
         [ -n "$bin" ] || continue
@@ -78,11 +89,11 @@ PidFile=/var/run/zabbix/zabbix_agent2.pid
 Timeout=30
 LogFile=/dev/stdout
 LogFileSize=0
-ServerActive=${ZBX_SERVER_HOST}
+ServerActive=${SERVER_HOST}:${SERVER_PORT}
 Hostname=${HOSTNAME}
 TLSConnect=psk
 TLSAccept=psk
-TLSPSKIdentity=${ZBX_TLSPSKIDENTITY}
+TLSPSKIdentity=${PSK_IDENTITY}
 TLSPSKFile=${PSK_FILE}
 # V4 backward compatibility bridge (Maps old Zabbix items to the V5 script)
 UserParameter=netvaktin.mtr[*],/usr/bin/route_check_v5.py "\$2" "\$1" "icmp-paris" "3" "1000" "32" "false"

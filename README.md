@@ -120,7 +120,7 @@ Linux Docker Engine on a normal Linux host is the recommended environment for th
 ### Run doctor mode first
 
 ```bash
-./deploy.sh --doctor
+./deploy.sh --doctor ProbeV5-IS-Example Domestic
 ./deploy_dev.sh --doctor
 ```
 
@@ -185,5 +185,11 @@ docker run --rm --entrypoint sh netvaktin-probe -c "grep -n 'ZBX_TLSPSKVALUE\\|T
 ## Release Notes
 
 The GitHub Container Registry image `ghcr.io/hoddiv/netvaktin-probe:latest` is intended to be published from `main`. If you are testing unpublished local changes, build locally and tag the image as `netvaktin-probe`.
+
+After publishing `latest`, verify that an anonymous pull works:
+
+```bash
+docker pull ghcr.io/hoddiv/netvaktin-probe:latest
+```
 
 IPv6 probing is intentionally out of scope for this V5 community probe rollout. If added later, it should ship as a separate, explicitly labeled measurement family rather than being mixed into the current IPv4-oriented route set.

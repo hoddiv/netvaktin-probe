@@ -56,6 +56,8 @@ run_docker() {
 }
 
 resolve_hostname_and_role() {
+    local raw_role=""
+
     if [ -n "${1:-}" ]; then
         HOSTNAME="$1"
     elif [ "$DOCTOR_MODE" = "1" ]; then
@@ -70,7 +72,7 @@ resolve_hostname_and_role() {
     fi
 
     if [ -n "${2:-}" ]; then
-        ROLE="$2"
+        raw_role="$2"
     elif [ "$DOCTOR_MODE" = "1" ]; then
         ROLE="Domestic"
     else
@@ -80,8 +82,24 @@ resolve_hostname_and_role() {
         read -p "Choice [1]: " ROLE_CHOICE
 
         case "$ROLE_CHOICE" in
+            ""|1) ROLE="Domestic" ;;
             2) ROLE="External" ;;
-            *) ROLE="Domestic" ;;
+            *) raw_role="$ROLE_CHOICE" ;;
+        esac
+    fi
+
+    if [ -n "$raw_role" ]; then
+        case "$raw_role" in
+            1|domestic|Domestic)
+                ROLE="Domestic"
+                ;;
+            2|external|External|ext)
+                ROLE="External"
+                ;;
+            *)
+                echo "❌ Error: Unknown role '$raw_role'. Use 1/domestic or 2/external."
+                exit 1
+                ;;
         esac
     fi
 }
