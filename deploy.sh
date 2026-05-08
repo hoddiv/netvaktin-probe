@@ -6,8 +6,10 @@ PORT="10051"
 API="https://monitor.logbirta.is/api_jsonrpc.php"
 PSK_FILE="netvaktin.psk"
 CONTAINER_PSK_FILE="/etc/zabbix/netvaktin.psk"
-IMAGE_NAME="netvaktin-probe"
+DEFAULT_IMAGE_NAME="ghcr.io/hoddiv/netvaktin-probe:latest"
+IMAGE_NAME="${NETVAKTIN_IMAGE:-$DEFAULT_IMAGE_NAME}"
 AUTO_BUILD_ON_INVALID="${NETVAKTIN_BUILD_IF_INVALID:-0}"
+NO_PULL="${NETVAKTIN_NO_PULL:-0}"
 SKIP_REMOTE_PREFLIGHT="${NETVAKTIN_SKIP_REMOTE_PREFLIGHT:-0}"
 DOCKER_CMD=()
 DOCKER_PREFIX_DISPLAY="docker"
@@ -17,11 +19,28 @@ PREFLIGHT_FAILURES=()
 HOSTNAME=""
 ROLE=""
 HOSTNAME_PATTERN='^ProbeV5-[A-Z]{2}-[A-Za-z0-9._-]+$'
+ACTION="deploy"
 
-if [ "${1:-}" = "--doctor" ]; then
-    DOCTOR_MODE=1
-    shift
-fi
+case "${1:-}" in
+    --doctor)
+        ACTION="doctor"
+        DOCTOR_MODE=1
+        shift
+        ;;
+    --logs)
+        ACTION="logs"
+        shift
+        ;;
+    --status)
+        ACTION="status"
+        shift
+        ;;
+    --support)
+        ACTION="support"
+        DOCTOR_MODE=1
+        shift
+        ;;
+esac
 
 record_warning() {
     PREFLIGHT_WARNINGS+=("$*")
@@ -55,6 +74,21 @@ run_docker() {
     "${DOCKER_CMD[@]}" "$@"
 }
 
+is_registry_image() {
+    case "$1" in
+        ghcr.io/*|docker.io/*|quay.io/*|registry.gitlab.com/*|public.ecr.aws/*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+container_name_for_hostname() {
+    printf 'netvaktin-%s' "$1"
+}
+
 resolve_hostname_and_role() {
     local raw_role=""
 
@@ -62,30 +96,26 @@ resolve_hostname_and_role() {
         HOSTNAME="$1"
     elif [ "$DOCTOR_MODE" = "1" ]; then
         HOSTNAME=""
+    elif [ "$ACTION" = "deploy" ]; then
+        read -p "🖥️  Hostname (e.g., ProbeV5-IS-Nova): " HOSTNAME
     else
-        read -p "🖥️  Hostname (e.g., ProbeV5-IS-Hringdu): " HOSTNAME
+        HOSTNAME=""
     fi
 
-    if [ "$DOCTOR_MODE" != "1" ] && [ -z "$HOSTNAME" ]; then
+    if [ "$ACTION" != "doctor" ] && [ -z "$HOSTNAME" ]; then
         echo "❌ Error: Hostname required."
         exit 1
     fi
 
+    if [ "$ACTION" = "logs" ] || [ "$ACTION" = "status" ]; then
+        ROLE="Domestic"
+        return 0
+    fi
+
     if [ -n "${2:-}" ]; then
         raw_role="$2"
-    elif [ "$DOCTOR_MODE" = "1" ]; then
-        ROLE="Domestic"
     else
-        echo "Select Probe Role:"
-        echo "  1) Domestic (Outbound Monitoring - Default)"
-        echo "  2) External (Inbound Monitoring - e.g., Hetzner)"
-        read -p "Choice [1]: " ROLE_CHOICE
-
-        case "$ROLE_CHOICE" in
-            ""|1) ROLE="Domestic" ;;
-            2) ROLE="External" ;;
-            *) raw_role="$ROLE_CHOICE" ;;
-        esac
+        ROLE="Domestic"
     fi
 
     if [ -n "$raw_role" ]; then
@@ -118,11 +148,43 @@ remove_local_path() {
 }
 
 print_image_refresh_help() {
-    echo "❌ Local Docker image '$IMAGE_NAME' is missing or does not contain the current PSK bootstrap logic."
-    echo "   Refresh it with one of the following options:"
-    echo "   A) docker pull ghcr.io/hoddiv/netvaktin-probe:latest && docker tag ghcr.io/hoddiv/netvaktin-probe:latest $IMAGE_NAME"
-    echo "   B) $DOCKER_PREFIX_DISPLAY build --pull --no-cache -t $IMAGE_NAME ."
+    echo "❌ Selected Docker image '$IMAGE_NAME' is missing or does not contain the current PSK bootstrap logic."
+    if is_registry_image "$IMAGE_NAME"; then
+        echo "   Re-run the script without NETVAKTIN_NO_PULL=1 so it can pull a fresh image automatically."
+        echo "   For a local developer build instead:"
+        echo "   1) $DOCKER_PREFIX_DISPLAY build --pull --no-cache -t netvaktin-probe:local ."
+        echo "   2) NETVAKTIN_IMAGE=netvaktin-probe:local ./deploy.sh ProbeV5-IS-Nova"
+    else
+        echo "   Build or refresh the local image, then rerun:"
+        echo "   $DOCKER_PREFIX_DISPLAY build --pull --no-cache -t $IMAGE_NAME ."
+    fi
     echo "   Optional: set NETVAKTIN_BUILD_IF_INVALID=1 to let this script rebuild locally when validation fails."
+}
+
+ensure_selected_image() {
+    if ! is_registry_image "$IMAGE_NAME"; then
+        return 0
+    fi
+
+    if [ "$NO_PULL" = "1" ]; then
+        echo "ℹ️  Skipping image pull because NETVAKTIN_NO_PULL=1."
+        return 0
+    fi
+
+    echo "📥 Pulling probe image: $IMAGE_NAME"
+    if ! run_docker pull "$IMAGE_NAME"; then
+        record_failure "Failed to pull Docker image '$IMAGE_NAME'."
+        echo "   Check Docker registry access on this host, or use a local override such as:"
+        echo "   NETVAKTIN_IMAGE=netvaktin-probe:local ./deploy.sh ProbeV5-IS-Nova"
+        return 1
+    fi
+
+    return 0
+}
+
+reset_preflight_state() {
+    PREFLIGHT_WARNINGS=()
+    PREFLIGHT_FAILURES=()
 }
 
 check_docker_environment() {
@@ -282,10 +344,10 @@ print("connected")
 validate_probe_image() {
     if ! run_docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
         if [ "$AUTO_BUILD_ON_INVALID" = "1" ]; then
-            echo "⚠️  Local image '$IMAGE_NAME' not found. Building it now because NETVAKTIN_BUILD_IF_INVALID=1..."
+            echo "⚠️  Image '$IMAGE_NAME' not found. Building it now because NETVAKTIN_BUILD_IF_INVALID=1..."
             run_docker build --pull --no-cache -t "$IMAGE_NAME" . || return 1
         else
-            record_failure "Local Docker image '$IMAGE_NAME' is missing."
+            record_failure "Selected Docker image '$IMAGE_NAME' is missing."
             print_image_refresh_help
             return 1
         fi
@@ -301,7 +363,7 @@ validate_probe_image() {
     fi
 
     if [ "$AUTO_BUILD_ON_INVALID" = "1" ]; then
-        echo "⚠️  Local image '$IMAGE_NAME' is stale. Rebuilding it now because NETVAKTIN_BUILD_IF_INVALID=1..."
+        echo "⚠️  Image '$IMAGE_NAME' is stale. Rebuilding it now because NETVAKTIN_BUILD_IF_INVALID=1..."
         run_docker build --pull --no-cache -t "$IMAGE_NAME" . || return 1
         if run_docker run --rm --entrypoint sh "$IMAGE_NAME" -c \
             "test -x /usr/bin/entrypoint.sh && \
@@ -311,12 +373,12 @@ validate_probe_image() {
             echo "✅ Image preflight passed after local rebuild."
             return 0
         fi
-        record_failure "Local Docker image '$IMAGE_NAME' is still stale after local rebuild."
+        record_failure "Selected Docker image '$IMAGE_NAME' is still stale after local rebuild."
         print_image_refresh_help
         return 1
     fi
 
-    record_failure "Local Docker image '$IMAGE_NAME' is stale."
+    record_failure "Selected Docker image '$IMAGE_NAME' is stale."
     print_image_refresh_help
     return 1
 }
@@ -438,6 +500,77 @@ print_doctor_summary() {
     return 1
 }
 
+run_doctor() {
+    if [ "$ACTION" = "doctor" ] || [ "$ACTION" = "support" ]; then
+        echo "🩺 Running deploy doctor checks..."
+    fi
+
+    if ! run_all_preflights; then
+        print_doctor_summary
+        return 1
+    fi
+
+    print_doctor_summary
+    return 0
+}
+
+print_logs() {
+    local container
+    container="$(container_name_for_hostname "$HOSTNAME")"
+    run_docker logs "$container" --tail 80
+}
+
+print_status() {
+    local container
+    container="$(container_name_for_hostname "$HOSTNAME")"
+
+    echo "Container status for $container:"
+    run_docker ps -a --filter "name=^${container}$" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+    echo ""
+    echo "Netvaktin containers on this host:"
+    run_docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep '^netvaktin' || true
+}
+
+print_support_bundle() {
+    local container doctor_status
+    container="$(container_name_for_hostname "$HOSTNAME")"
+
+    echo "=== Netvaktin Support Bundle ==="
+    echo "Hostname: $HOSTNAME"
+    echo "Selected image: $IMAGE_NAME"
+    echo "Role: $ROLE"
+    echo "Docker access mode: $DOCKER_PREFIX_DISPLAY"
+    echo ""
+    echo "=== Doctor Output ==="
+    reset_preflight_state
+    if run_doctor; then
+        doctor_status=0
+    else
+        doctor_status=1
+    fi
+    echo ""
+    echo "=== Docker Version ==="
+    run_docker version || true
+    echo ""
+    echo "=== uname -a ==="
+    uname -a || true
+    echo ""
+    echo "=== Netvaktin Containers ==="
+    run_docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep '^netvaktin' || true
+    echo ""
+    echo "=== Container Status ==="
+    run_docker ps -a --filter "name=^${container}$" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+    echo ""
+    echo "=== Last 80 Log Lines ==="
+    if run_docker ps -a --format '{{.Names}}' | grep -qx "$container"; then
+        run_docker logs "$container" --tail 80 || true
+    else
+        echo "No container named $container exists on this host."
+    fi
+
+    return "$doctor_status"
+}
+
 # 1. Environment Checks
 if ! command -v docker &> /dev/null; then
     echo "❌ Error: Docker not found."
@@ -450,20 +583,39 @@ fi
 
 resolve_hostname_and_role "${1:-}" "${2:-}"
 
-if [ "$DOCTOR_MODE" = "1" ]; then
-    echo "🩺 Running deploy doctor checks..."
-fi
+case "$ACTION" in
+    logs)
+        print_logs
+        exit $?
+        ;;
+    status)
+        print_status
+        exit $?
+        ;;
+    support)
+        if ! ensure_selected_image; then
+            print_doctor_summary
+            exit 1
+        fi
+        print_support_bundle
+        exit $?
+        ;;
+    doctor)
+        if ! ensure_selected_image; then
+            print_doctor_summary
+            exit 1
+        fi
+        run_doctor
+        exit $?
+        ;;
+esac
 
-if ! run_all_preflights; then
-    if [ "$DOCTOR_MODE" = "1" ]; then
-        print_doctor_summary
-    fi
+if ! ensure_selected_image; then
     exit 1
 fi
 
-if [ "$DOCTOR_MODE" = "1" ]; then
-    print_doctor_summary
-    exit 0
+if ! run_all_preflights; then
+    exit 1
 fi
 
 # 2. Credential Handling
@@ -481,7 +633,7 @@ fi
 echo ">> Configured as: $ROLE Probe"
 
 PSK_ID="CommunityProbe-${HOSTNAME}"
-CONTAINER="netvaktin-${HOSTNAME}"
+CONTAINER="$(container_name_for_hostname "$HOSTNAME")"
 
 # 4. Key Management
 # Stop old container FIRST so it releases any bind-mount hold on the PSK path
