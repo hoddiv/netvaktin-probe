@@ -121,6 +121,7 @@ Possible slices:
 - `fix/register-probe-lifecycle-reconciliation`
 - `fix/route-runner-input-guardrails`
 - `build/probe-image-reproducibility`
+- `fix/probe-runtime-hardening`
 
 ## Obsolete framing to avoid
 
