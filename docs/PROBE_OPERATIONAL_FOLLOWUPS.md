@@ -1,164 +1,134 @@
 # Probe operational follow-ups
 
-Status: **current follow-up list based on `main`**
+Status: **prioritized roadmap based on current `main`**
 
-This note tracks operational hardening, deployment hygiene, and community-support follow-ups for the Netvaktin probe after the current deploy and publishing hardening work already landed on `main`.
+This document tracks general probe follow-up work that is still useful after the current deploy and publishing hardening already landed on `main`.
 
-It is intentionally not written as a vulnerability report. The goal is to make volunteer/community probe installs easier to support and less likely to fail in confusing ways.
+It is intentionally focused on reliability, deployment hygiene, and volunteer/community support. It is not a vulnerability report and should not be used to track individual support cases.
 
-## 1. Current state already implemented
+## Completed / current baseline
 
-The following items are already in place on current `main` and should not be restated as open TODOs:
+The following are already in place on current `main`:
 
-- `deploy.sh` and `deploy_dev.sh` have a doctor/support-oriented deploy flow with preflight output intended for volunteer troubleshooting.
-- The deploy scripts validate the selected image before use and refuse stale images that do not contain the expected PSK bootstrap markers.
-- `entrypoint.sh` bootstraps the PSK file from `ZBX_TLSPSKVALUE`, verifies that the file exists and is non-empty before starting `zabbix_agent2`, and writes `TLSPSKFile` into the generated Zabbix config.
-- The deploy scripts perform Docker/runtime diagnostics for host networking, `NET_RAW`, image executability, local PSK path issues, and outbound connectivity.
-- The GHCR publish workflow now validates both the pushed digest image and `ghcr.io/hoddiv/netvaktin-probe:latest` after publish.
+- doctor/support deploy flow in `deploy.sh` and `deploy_dev.sh`
+- image preflight validation before deploy
+- PSK bootstrap in `entrypoint.sh`
+- GHCR validation of both pushed digest and `latest`
+- volunteer setup guide
 
-This document only covers what still appears useful after those changes.
+Open items below should be read as future work beyond that baseline.
 
-## 2. Registration lifecycle follow-ups
+## P0 — Volunteer deployment reliability
 
-### Existing-host role and template reconciliation
+Priority goal: keep the normal volunteer path simple, predictable, and easy to support.
 
-`register_probe.py` currently resolves the desired template and host group from the selected role, but for an existing host it mainly updates PSK and interface IP.
+Checklist:
 
-Future work:
+- keep the normal deploy path short and clearly documented
+- maintain support-bundle-first troubleshooting instead of ad hoc manual debugging
+- keep clean reinstall guidance targeted to probe leftovers only
+- keep canonical hostname guidance clear for volunteers and operators
+- ensure stale-image and image-drift failures remain actionable and easy to explain
 
-- detect when an existing host is still linked to the wrong group or template for the selected role
-- warn clearly or reconcile automatically, depending on how safe that behavior is in practice
-- document expected dev-to-prod and domestic-to-external transitions
+Notes:
 
-Why this still matters:
+- the public docs should continue to bias toward copy/paste guidance rather than internals
+- troubleshooting paths should avoid pushing volunteers toward local image builds unless explicitly needed
 
-- a probe can be locally configured for one role while Zabbix still links it to another
-- community support is easier when role drift is surfaced explicitly
+## P1 — Registration lifecycle
 
-### Existing-host PSK sync failure behavior
+Priority goal: reduce confusion when a probe already exists in Zabbix but local runtime state changes.
 
-For existing hosts, PSK update failures should be reviewed as a lifecycle decision:
+Checklist:
 
-- decide whether PSK sync failure should become fatal before agent startup
-- or keep the current behavior but make the failure much more explicit in support guidance
+- make existing-host PSK sync failure fatal or explicitly handled
+- detect existing-host group/template mismatch
+- decide whether role/template drift should warn or reconcile
+- document dev/prod and domestic/external transitions clearly
 
-Why this still matters:
+Notes:
 
-- “container started” is not the same as “probe can authenticate and deliver active checks”
+- “container is running” should not be treated as equivalent to “probe is correctly registered”
+- role and template drift should be visible enough that operator support does not depend on guesswork
 
-### Volunteer cleanup and troubleshooting guidance
+## P2 — Route runner guardrails
 
-The current support flow is much better than before, but there is still room for clearer operator-facing docs on:
+Priority goal: make route-runner inputs predictable and bounded.
 
-- what to send after doctor mode fails
-- how to distinguish image drift from API registration issues
-- when to reuse a local PSK versus regenerate it
-- how to clean up stale local artifacts without touching runtime secrets unnecessarily
+Checklist:
 
-## 3. PSK/runtime follow-ups still open
+- enforce a method allowlist: `icmp-paris`, `udp-paris`, `tcp`
+- clamp probe count
+- clamp wait timeout
+- clamp max TTL
+- decide whether non-IP targets are supported or rejected
+- document the expected Zabbix item parameter contract
 
-### PSK path/type/format validation
+Notes:
 
-Current `main` already checks a lot:
+- bad measurement parameters should fail predictably
+- volunteer probes should not become noisy or expensive because of configuration mistakes upstream
 
-- local deploy-side PSK path readability and emptiness
-- entrypoint-side missing/empty PSK detection
+## P3 — Release reproducibility
 
-Possible further hardening, if it proves worthwhile:
+Priority goal: make probe image rebuilds and support expectations more reproducible over time.
 
-- explicitly reject a directory at the container PSK path before write/use
-- explicitly require a regular readable file when booting without `ZBX_TLSPSKVALUE`
-- optionally validate hex format in the entrypoint before starting the agent
+Checklist:
 
-This is a smaller follow-up now, not a broad PSK redesign.
+- pin the Zabbix base image more tightly than `alpine-7.0-latest`
+- verify the scamper tarball checksum
+- document `latest` versus SHA-tag release semantics
 
-### Non-root runtime investigation
+Notes:
 
-The image still performs setup as root and starts the agent from that context. If this is revisited later, it should be treated as a compatibility exercise, not a cosmetic change.
+- this is about reproducibility and supportability, not emergency release correctness
+- the current publish validation already covers the immediate stale-image problem
 
-Future work:
+## P4 — Runtime hardening
 
-- test whether setup can remain privileged while steady-state runtime is reduced
-- preserve `scamper` and `mtr-packet` raw-socket capability behavior
-- avoid breaking simple volunteer deployments behind normal residential routers
+Priority goal: improve runtime safety and observability without making volunteer deployment harder.
 
-## 4. Image reproducibility and release follow-ups
+Checklist:
 
-The release/publish validation gap that blocked volunteers has now been fixed. Remaining work is narrower and should focus on reproducibility rather than basic publish correctness.
+- investigate non-root steady-state runtime
+- improve the healthcheck without running route measurements
+- document what a healthy container does and does not mean
 
-Possible future work:
+Notes:
 
-- pin the base image more tightly than `zabbix/zabbix-agent2:alpine-7.0-latest`
-- record and verify the scamper source tarball checksum during build
-- consider SBOM/provenance work later if distribution expands
-- document expected release semantics for `latest` versus immutable SHA tags
+- any runtime privilege changes need to preserve current networking and raw-socket requirements
+- healthcheck work should stay low-impact for community probes
 
-These are supply-chain/reproducibility improvements, not emergency fixes.
+## Out of repo / operator-side
 
-## 5. Route-runner input guardrails
+These are important, but they should remain generic operator guidance rather than repo-side implementation work.
 
-`route_check_v5.py` already normalizes IPs and enforces some minimum numeric bounds, but its operator/input contract could be made tighter.
+Do not record individual volunteer names, provider-specific incidents, IP addresses, PSKs, API tokens, or private Zabbix details in this public repository.
 
-Future work:
+Checklist:
 
-- explicitly allowlist supported methods such as `icmp-paris`, `udp-paris`, and `tcp`
-- decide whether non-IP targets should be rejected or deliberately supported
-- clamp probe count, wait timeout, and max TTL to safe upper/lower ranges
-- document the intended item-parameter contract for Zabbix maintainers
+- clean stale Zabbix host records when probe names change
+- use one canonical hostname per physical or logical probe
+- handle API token distribution outside the public repo
 
-Why this still matters:
+## Suggested future PR slices
 
-- bad item parameters should fail predictably
-- volunteer probes should not be made noisy or expensive by configuration mistakes
+To keep review scope small, future work should stay split into narrow branches.
 
-## 6. Healthcheck and observability follow-ups
+Possible slices:
 
-The current healthcheck is intentionally cheap and stable, but it does not prove that active checks are succeeding.
+- `docs/volunteer-deploy-guidance-refresh`
+- `fix/register-probe-lifecycle-reconciliation`
+- `fix/route-runner-input-guardrails`
+- `build/probe-image-reproducibility`
 
-Possible future work:
+## Obsolete framing to avoid
 
-- investigate a slightly stronger healthcheck that stays low-impact
-- expose clearer support signals without running route measurements
-- document what “healthy container” does and does not guarantee for operators
+Earlier drafts are now outdated if they describe these as still missing:
 
-This should remain lightweight. Expensive or stateful healthchecks would be counterproductive on community probes.
+- doctor/support deploy flow
+- image preflight validation
+- entrypoint PSK bootstrap
+- GHCR post-publish validation of pushed digest and `latest`
 
-## 7. Suggested future PR slices
-
-To keep changes reviewable, future work should stay split into narrow branches.
-
-Suggested slices:
-
-### `docs/probe-operations-followups-refresh`
-
-- docs-only updates for volunteer troubleshooting, role transitions, and release semantics
-
-### `fix/register-probe-lifecycle-reconciliation`
-
-- existing-host group/template mismatch handling
-- explicit decision on PSK sync failure behavior
-- public-IP/interface update guardrails
-
-### `fix/route-runner-input-guardrails`
-
-- method allowlist
-- parameter bounds/clamping
-- clearer invalid-input output contract
-
-### `build/probe-image-reproducibility`
-
-- pinned base image or digest strategy
-- scamper checksum verification
-- any future provenance additions
-
-## 8. Explicitly obsolete items from earlier hardening drafts
-
-The earlier hardening drafts were useful during investigation, but the following should now be treated as obsolete framing:
-
-- treating doctor/support mode as future work
-- treating image preflight validation as future work
-- treating entrypoint PSK bootstrap as future work
-- treating GHCR post-publish validation as future work
-- describing the old release gap without noting that current `main` now validates both pushed digest and `latest`
-
-If any older draft is revived later, it should be rewritten against the current `main` baseline first rather than merged as-is.
+Any future refresh of this document should continue from the current `main` baseline rather than from older incident-specific drafts.
