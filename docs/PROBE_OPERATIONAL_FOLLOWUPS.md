@@ -103,6 +103,8 @@ Notes:
 
 These are important, but they should remain generic operator guidance rather than repo-side implementation work.
 
+Do not record individual volunteer names, provider-specific incidents, IP addresses, PSKs, API tokens, or private Zabbix details in this public repository.
+
 Checklist:
 
 - clean stale Zabbix host records when probe names change
