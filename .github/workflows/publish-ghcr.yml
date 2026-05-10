@@ -44,6 +44,7 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Build and publish image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -51,3 +52,21 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Validate published digest image
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/netvaktin-probe
+          PUBLISHED_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "${IMAGE_NAME}@${PUBLISHED_DIGEST}"
+          docker run --rm --entrypoint sh "${IMAGE_NAME}@${PUBLISHED_DIGEST}" -c 'grep -q "ZBX_TLSPSKVALUE" /usr/bin/entrypoint.sh && grep -q "TLSPSKFile" /usr/bin/entrypoint.sh && grep -q "TLS PSK file ready" /usr/bin/entrypoint.sh'
+
+      - name: Validate published latest image
+        if: github.ref == 'refs/heads/main'
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/netvaktin-probe:latest
+        run: |
+          set -euo pipefail
+          docker pull "${IMAGE_NAME}"
+          docker run --rm --entrypoint sh "${IMAGE_NAME}" -c 'grep -q "ZBX_TLSPSKVALUE" /usr/bin/entrypoint.sh && grep -q "TLSPSKFile" /usr/bin/entrypoint.sh && grep -q "TLS PSK file ready" /usr/bin/entrypoint.sh'
