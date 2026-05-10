@@ -21,8 +21,8 @@ Replace `ProbeV5-IS-Provider01` below with the hostname assigned to you.
 ## Fresh install / normal deploy
 
 ```bash
+git clone https://github.com/hoddiv/netvaktin-probe.git ~/netvaktin-probe-v5
 cd ~/netvaktin-probe-v5
-git pull --ff-only
 chmod +x deploy.sh
 ./deploy.sh --doctor ProbeV5-IS-Provider01
 ./deploy.sh ProbeV5-IS-Provider01
@@ -42,6 +42,16 @@ git pull --ff-only
 ## Clean reinstall for legacy leftovers
 
 Use this only if the operator asks you to do a clean reinstall, or if normal deploy keeps failing and you were told to clear old local leftovers first.
+
+The Docker container name follows:
+
+```text
+netvaktin-<hostname>
+```
+
+Example:
+
+If your assigned hostname is `ProbeV5-IS-Provider01`, the container name is `netvaktin-ProbeV5-IS-Provider01`.
 
 ```bash
 cd ~/netvaktin-probe-v5
