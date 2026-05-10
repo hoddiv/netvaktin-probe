@@ -21,8 +21,11 @@ Replace `ProbeV5-IS-Provider01` below with the hostname assigned to you.
 ## Fresh install / normal deploy
 
 ```bash
-git clone https://github.com/hoddiv/netvaktin-probe.git ~/netvaktin-probe-v5
+if [ ! -d ~/netvaktin-probe-v5/.git ]; then
+  git clone https://github.com/hoddiv/netvaktin-probe.git ~/netvaktin-probe-v5
+fi
 cd ~/netvaktin-probe-v5
+git pull --ff-only
 chmod +x deploy.sh
 ./deploy.sh --doctor ProbeV5-IS-Provider01
 ./deploy.sh ProbeV5-IS-Provider01
