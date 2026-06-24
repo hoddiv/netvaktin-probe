@@ -10,6 +10,11 @@
 SERVER="monitor.logbirta.is"
 PORT="10051"
 API="https://monitor.logbirta.is/api_jsonrpc.php"
+# Comma-separated list of active Zabbix servers (becomes ServerActive in the agent config).
+# Defaults to the standard Netvaktin servers so normal deployments report to all of them
+# out of the box. Override with a single "host:port" for primary-only testing, bootstrap,
+# or rollback, e.g.: NETVAKTIN_ZABBIX_ACTIVE_SERVERS="monitor.logbirta.is:10051"
+NETVAKTIN_ZABBIX_ACTIVE_SERVERS="${NETVAKTIN_ZABBIX_ACTIVE_SERVERS:-monitor.logbirta.is:10051,monitor.netvaktin.is:10051}"
 PSK_FILE="netvaktin-dev.psk"
 CONTAINER_PSK_FILE="/etc/zabbix/netvaktin.psk"
 IMAGE_NAME="netvaktin-probe"
@@ -213,14 +218,29 @@ check_local_psk_generation_dependency() {
 }
 
 check_server_connectivity() {
-    local dns_output tcp_output
+    local dns_output tcp_output entry host port entries overall_status=0
 
     if [ "$SKIP_REMOTE_PREFLIGHT" = "1" ]; then
-        record_warning "Skipping DNS/TCP preflight for $SERVER because NETVAKTIN_SKIP_REMOTE_PREFLIGHT=1."
+        record_warning "Skipping DNS/TCP preflight for all configured active servers because NETVAKTIN_SKIP_REMOTE_PREFLIGHT=1."
         return 0
     fi
 
-    dns_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
+    IFS=',' read -ra entries <<< "$NETVAKTIN_ZABBIX_ACTIVE_SERVERS"
+    if [ "${#entries[@]}" -eq 0 ]; then
+        record_failure "NETVAKTIN_ZABBIX_ACTIVE_SERVERS is empty; no active Zabbix endpoints configured."
+        return 1
+    fi
+
+    for entry in "${entries[@]}"; do
+        host="${entry%%:*}"
+        port="${entry##*:}"
+        if [ -z "$host" ] || [ -z "$port" ] || [ "$host" = "$entry" ]; then
+            record_failure "Invalid active server entry '$entry'; expected host:port."
+            overall_status=1
+            continue
+        fi
+
+        dns_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
 import socket, sys
 host = sys.argv[1]
 try:
@@ -234,16 +254,17 @@ for item in infos:
     if addr not in seen:
         seen.append(addr)
 print(" ".join(seen))
-' "$SERVER" 2>&1)"
-    if [ $? -ne 0 ]; then
-        record_failure "DNS resolution failed for $SERVER."
-        echo "$dns_output"
-        return 1
-    fi
+' "$host" 2>&1)"
+        if [ $? -ne 0 ]; then
+            record_failure "DNS resolution failed for $host."
+            echo "$dns_output"
+            overall_status=1
+            continue
+        fi
 
-    echo "ℹ️  $SERVER resolves to: $dns_output"
+        echo "ℹ️  $host resolves to: $dns_output"
 
-    tcp_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
+        tcp_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
 import socket, sys
 host = sys.argv[1]
 port = int(sys.argv[2])
@@ -254,15 +275,18 @@ except Exception as exc:
     print(f"error:{exc}")
     sys.exit(1)
 print("connected")
-' "$SERVER" "$PORT" 2>&1)"
-    if [ $? -ne 0 ]; then
-        record_failure "Outbound TCP connectivity test to $SERVER:$PORT failed."
-        echo "$tcp_output"
-        return 1
-    fi
+' "$host" "$port" 2>&1)"
+        if [ $? -ne 0 ]; then
+            record_failure "Outbound TCP connectivity test to $host:$port failed."
+            echo "$tcp_output"
+            overall_status=1
+            continue
+        fi
 
-    echo "✅ Outbound TCP connectivity to $SERVER:$PORT succeeded."
-    return 0
+        echo "✅ Outbound TCP connectivity to $host:$port succeeded."
+    done
+
+    return "$overall_status"
 }
 
 validate_probe_image() {
@@ -281,8 +305,9 @@ validate_probe_image() {
         "test -x /usr/bin/entrypoint.sh && \
          grep -q 'ZBX_TLSPSKVALUE' /usr/bin/entrypoint.sh && \
          grep -q 'TLSPSKFile' /usr/bin/entrypoint.sh && \
-         grep -q 'TLS PSK file ready' /usr/bin/entrypoint.sh"; then
-        echo "✅ Image preflight passed: '$IMAGE_NAME' contains PSK bootstrap support."
+         grep -q 'TLS PSK file ready' /usr/bin/entrypoint.sh && \
+         grep -q 'SERVER_ACTIVE_LIST' /usr/bin/entrypoint.sh"; then
+        echo "✅ Image preflight passed: '$IMAGE_NAME' contains PSK bootstrap and multi-server active-list support."
         return 0
     fi
 
@@ -293,16 +318,17 @@ validate_probe_image() {
             "test -x /usr/bin/entrypoint.sh && \
              grep -q 'ZBX_TLSPSKVALUE' /usr/bin/entrypoint.sh && \
              grep -q 'TLSPSKFile' /usr/bin/entrypoint.sh && \
-             grep -q 'TLS PSK file ready' /usr/bin/entrypoint.sh"; then
+             grep -q 'TLS PSK file ready' /usr/bin/entrypoint.sh && \
+             grep -q 'SERVER_ACTIVE_LIST' /usr/bin/entrypoint.sh"; then
             echo "✅ Image preflight passed after local rebuild."
             return 0
         fi
-        record_failure "Local Docker image '$IMAGE_NAME' is still stale after local rebuild."
+        record_failure "Local Docker image '$IMAGE_NAME' is still stale after local rebuild (missing PSK bootstrap and/or ZBX_SERVER_ACTIVE multi-server support)."
         print_image_refresh_help
         return 1
     fi
 
-    record_failure "Local Docker image '$IMAGE_NAME' is stale."
+    record_failure "Local Docker image '$IMAGE_NAME' is stale (missing PSK bootstrap and/or ZBX_SERVER_ACTIVE multi-server support) — it would silently report to the primary endpoint only."
     print_image_refresh_help
     return 1
 }
@@ -503,6 +529,7 @@ run_docker run -d \
   -e ZBX_HOSTNAME="$HOSTNAME" \
   -e ZBX_SERVER_HOST="$SERVER" \
   -e ZBX_SERVER_PORT="$PORT" \
+  -e ZBX_SERVER_ACTIVE="$NETVAKTIN_ZABBIX_ACTIVE_SERVERS" \
   -e ZBX_API_URL="$API" \
   -e ZBX_API_TOKEN="$ZBX_API_TOKEN" \
   -e ZBX_TLSPSKIDENTITY="$PSK_ID" \
