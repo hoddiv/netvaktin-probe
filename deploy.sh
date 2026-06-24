@@ -295,6 +295,7 @@ check_local_psk_generation_dependency() {
 
 check_server_connectivity() {
     local dns_output tcp_output entry host port entries overall_status=0
+    local cleaned_servers=""
 
     if [ "$SKIP_REMOTE_PREFLIGHT" = "1" ]; then
         record_warning "Skipping DNS/TCP preflight for all configured active servers because NETVAKTIN_SKIP_REMOTE_PREFLIGHT=1."
@@ -318,6 +319,15 @@ check_server_connectivity() {
             record_failure "Invalid active server entry '$entry'; expected host:port."
             overall_status=1
             continue
+        fi
+
+        # Rebuild the comma-separated list from the trimmed entries so the cleaned,
+        # space-free value (not the raw operator-supplied string) is what eventually
+        # reaches the container as ZBX_SERVER_ACTIVE/ServerActive.
+        if [ -z "$cleaned_servers" ]; then
+            cleaned_servers="$entry"
+        else
+            cleaned_servers="${cleaned_servers},${entry}"
         fi
 
         dns_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
@@ -365,6 +375,10 @@ print("connected")
 
         echo "✅ Outbound TCP connectivity to $host:$port succeeded."
     done
+
+    if [ "$overall_status" -eq 0 ]; then
+        NETVAKTIN_ZABBIX_ACTIVE_SERVERS="$cleaned_servers"
+    fi
 
     return "$overall_status"
 }
