@@ -232,6 +232,10 @@ check_server_connectivity() {
     fi
 
     for entry in "${entries[@]}"; do
+        # Trim leading/trailing whitespace so "host:port, host:port" (space after
+        # comma) doesn't produce a leading-space host that fails DNS lookup.
+        entry="${entry#"${entry%%[![:space:]]*}"}"
+        entry="${entry%"${entry##*[![:space:]]}"}"
         host="${entry%%:*}"
         port="${entry##*:}"
         if [ -z "$host" ] || [ -z "$port" ] || [ "$host" = "$entry" ]; then
