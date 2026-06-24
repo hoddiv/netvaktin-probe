@@ -70,6 +70,14 @@ fi
 log "🔐 TLS PSK file ready at $PSK_FILE."
 
 # === 4. ZABBIX AGENT CONFIGURATION ===
+# A standalone active-server list is a complete config on its own — derive SERVER_HOST
+# from its first endpoint so direct container/Kubernetes users aren't forced to also set
+# ZBX_SERVER_HOST just to satisfy the validation loop below.
+if [ -n "$SERVER_ACTIVE_LIST" ] && [ -z "$SERVER_HOST" ]; then
+    first_active="${SERVER_ACTIVE_LIST%%,*}"
+    SERVER_HOST="${first_active%%:*}"
+fi
+
 for required_name in HOSTNAME SERVER_HOST PSK_IDENTITY; do
     required_value="$(eval "printf '%s' \"\${$required_name}\"")"
     if [ -z "$required_value" ]; then
