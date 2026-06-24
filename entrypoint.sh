@@ -9,6 +9,10 @@ PSK_FILE="${ZBX_TLSPSKFILE:-/etc/zabbix/netvaktin.psk}"
 HOSTNAME="${ZBX_HOSTNAME:-}"
 SERVER_HOST="${ZBX_SERVER_HOST:-}"
 SERVER_PORT="${ZBX_SERVER_PORT:-10051}"
+# Comma-separated list of active Zabbix servers, used verbatim as ServerActive when set
+# (e.g. "monitor.logbirta.is:10051,monitor.netvaktin.is:10051"). Falls back to
+# SERVER_HOST:SERVER_PORT below when unset/empty.
+SERVER_ACTIVE_LIST="${ZBX_SERVER_ACTIVE:-}"
 PSK_IDENTITY="${ZBX_TLSPSKIDENTITY:-}"
 
 # === 1. ROLE SWITCHING ===
@@ -83,13 +87,20 @@ if command -v getcap >/dev/null 2>&1; then
     done
 fi
 
+if [ -n "$SERVER_ACTIVE_LIST" ]; then
+    SERVER_ACTIVE_CONFIG="$SERVER_ACTIVE_LIST"
+else
+    SERVER_ACTIVE_CONFIG="${SERVER_HOST}:${SERVER_PORT}"
+fi
+log "📡 Active Zabbix servers: $SERVER_ACTIVE_CONFIG"
+
 log "⚙️ Generating Zabbix Agent configuration..."
 cat > "$ZABBIX_CONF" <<EOF
 PidFile=/var/run/zabbix/zabbix_agent2.pid
 Timeout=30
 LogFile=/dev/stdout
 LogFileSize=0
-ServerActive=${SERVER_HOST}:${SERVER_PORT}
+ServerActive=${SERVER_ACTIVE_CONFIG}
 Hostname=${HOSTNAME}
 TLSConnect=psk
 TLSAccept=psk

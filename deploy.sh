@@ -4,6 +4,11 @@
 SERVER="monitor.logbirta.is"
 PORT="10051"
 API="https://monitor.logbirta.is/api_jsonrpc.php"
+# Comma-separated list of active Zabbix servers (becomes ServerActive in the agent config).
+# Defaults to the standard Netvaktin servers so normal deployments report to all of them
+# out of the box. Override with a single "host:port" for primary-only testing, bootstrap,
+# or rollback, e.g.: NETVAKTIN_ZABBIX_ACTIVE_SERVERS="monitor.logbirta.is:10051"
+NETVAKTIN_ZABBIX_ACTIVE_SERVERS="${NETVAKTIN_ZABBIX_ACTIVE_SERVERS:-monitor.logbirta.is:10051,monitor.netvaktin.is:10051}"
 PSK_FILE="netvaktin.psk"
 CONTAINER_PSK_FILE="/etc/zabbix/netvaktin.psk"
 DEFAULT_IMAGE_NAME="ghcr.io/hoddiv/netvaktin-probe:latest"
@@ -671,6 +676,7 @@ run_docker run -d \
   -e ZBX_HOSTNAME="$HOSTNAME" \
   -e ZBX_SERVER_HOST="$SERVER" \
   -e ZBX_SERVER_PORT="$PORT" \
+  -e ZBX_SERVER_ACTIVE="$NETVAKTIN_ZABBIX_ACTIVE_SERVERS" \
   -e ZBX_API_URL="$API" \
   -e ZBX_API_TOKEN="$ZBX_API_TOKEN" \
   -e ZBX_TLSPSKIDENTITY="$PSK_ID" \

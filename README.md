@@ -99,6 +99,76 @@ On promotion from dev to prod: reconfigure the container hostname (strip `DEV-`)
 
 ---
 
+## Multiple Active Zabbix Servers
+
+A probe can report the same active-check data to one or more independent Zabbix servers.
+The probe generates a normal Zabbix `ServerActive` value — a comma-separated list of
+`host:port` endpoints — from a single configuration variable.
+
+Normal Netvaktin deployments report to two servers by default:
+
+```text
+monitor.logbirta.is:10051
+monitor.netvaktin.is:10051
+```
+
+`./deploy.sh` and `./deploy_dev.sh` enable this by default — no extra flags needed:
+
+```bash
+./deploy.sh ProbeV5-IS-Nova
+```
+
+generates:
+
+```text
+ServerActive=monitor.logbirta.is:10051,monitor.netvaktin.is:10051
+```
+
+**Every configured endpoint must resolve and be reachable from the probe host** on its
+configured port. Routing, firewalling, DNS, and exposure of those endpoints are
+deployment-specific and are managed entirely outside the probe container — the probe itself
+has no opinion on transport. An unreachable endpoint is retried by Zabbix Agent 2 on its own
+(it maintains each entry in the list independently) and does not block, delay, or degrade
+delivery to the other, reachable endpoints.
+
+**Primary-only override** (useful for testing, bootstrap, rollback, or special deployments):
+
+```bash
+NETVAKTIN_ZABBIX_ACTIVE_SERVERS="monitor.logbirta.is:10051" ./deploy.sh ProbeV5-IS-Nova
+```
+
+generates:
+
+```text
+ServerActive=monitor.logbirta.is:10051
+```
+
+**Future expansion to additional servers** works the same way — just add more entries:
+
+```bash
+NETVAKTIN_ZABBIX_ACTIVE_SERVERS="monitor.logbirta.is:10051,monitor.netvaktin.is:10051,third.example.net:10051" ./deploy.sh ProbeV5-IS-Nova
+```
+
+Every Zabbix server that receives data from a given probe must already have a matching host
+entry for that probe's `Hostname`, with the same PSK identity/key and a compatible
+item/template configuration — this software change only controls how many servers the
+probe *sends* to, not how those servers are provisioned to receive it.
+
+If running the container directly instead of via `deploy.sh`/`deploy_dev.sh`, the underlying
+container-level variable is `ZBX_SERVER_ACTIVE` — set directly to the full list and it's used
+verbatim as `ServerActive`:
+
+```bash
+-e ZBX_SERVER_ACTIVE="monitor.logbirta.is:10051,monitor.netvaktin.is:10051"
+```
+
+Leaving `ZBX_SERVER_ACTIVE` unset/empty falls back to the original single-server behavior
+built from `ZBX_SERVER_HOST`/`ZBX_SERVER_PORT` — this is intentional and keeps the container
+itself fully backwards-compatible; the default-on multi-server behavior lives only in the
+deploy scripts, not the container.
+
+---
+
 ## Troubleshooting
 
 Linux Docker Engine on a normal Linux host is the recommended environment for this probe. Rootless Docker, Docker Desktop, and Docker Desktop-like environments may not support host networking and `NET_RAW` the same way as Linux Docker Engine.
