@@ -217,13 +217,14 @@ check_local_psk_generation_dependency() {
     return 0
 }
 
-check_server_connectivity() {
-    local dns_output tcp_output entry host port entries overall_status=0
-
-    if [ "$SKIP_REMOTE_PREFLIGHT" = "1" ]; then
-        record_warning "Skipping DNS/TCP preflight for all configured active servers because NETVAKTIN_SKIP_REMOTE_PREFLIGHT=1."
-        return 0
-    fi
+# Trims whitespace from each comma-separated NETVAKTIN_ZABBIX_ACTIVE_SERVERS entry and
+# reassigns the cleaned, space-free value back to the global variable, so that
+# "host:port, host:port" (space after comma) never reaches the container's
+# ZBX_SERVER_ACTIVE/ServerActive config with an embedded space. Must run before any
+# return out of check_server_connectivity, including the NETVAKTIN_SKIP_REMOTE_PREFLIGHT=1
+# path, since that path also feeds the same variable to the later docker run.
+normalize_active_servers() {
+    local entry entries entry_host entry_port cleaned_servers="" status=0
 
     IFS=',' read -ra entries <<< "$NETVAKTIN_ZABBIX_ACTIVE_SERVERS"
     if [ "${#entries[@]}" -eq 0 ]; then
@@ -232,13 +233,43 @@ check_server_connectivity() {
     fi
 
     for entry in "${entries[@]}"; do
-        host="${entry%%:*}"
-        port="${entry##*:}"
-        if [ -z "$host" ] || [ -z "$port" ] || [ "$host" = "$entry" ]; then
+        entry="${entry#"${entry%%[![:space:]]*}"}"
+        entry="${entry%"${entry##*[![:space:]]}"}"
+        entry_host="${entry%%:*}"
+        entry_port="${entry##*:}"
+        if [ -z "$entry_host" ] || [ -z "$entry_port" ] || [ "$entry_host" = "$entry" ]; then
             record_failure "Invalid active server entry '$entry'; expected host:port."
-            overall_status=1
+            status=1
             continue
         fi
+
+        if [ -z "$cleaned_servers" ]; then
+            cleaned_servers="$entry"
+        else
+            cleaned_servers="${cleaned_servers},${entry}"
+        fi
+    done
+
+    NETVAKTIN_ZABBIX_ACTIVE_SERVERS="$cleaned_servers"
+    return "$status"
+}
+
+check_server_connectivity() {
+    local dns_output tcp_output entry host port entries overall_status=0
+
+    if ! normalize_active_servers; then
+        return 1
+    fi
+
+    if [ "$SKIP_REMOTE_PREFLIGHT" = "1" ]; then
+        record_warning "Skipping DNS/TCP preflight for all configured active servers because NETVAKTIN_SKIP_REMOTE_PREFLIGHT=1."
+        return 0
+    fi
+
+    IFS=',' read -ra entries <<< "$NETVAKTIN_ZABBIX_ACTIVE_SERVERS"
+    for entry in "${entries[@]}"; do
+        host="${entry%%:*}"
+        port="${entry##*:}"
 
         dns_output="$(run_docker run --rm --net=host --entrypoint python3 "$IMAGE_NAME" -c '
 import socket, sys
